@@ -15,7 +15,7 @@ async def main() -> int:
     parser.add_argument("--delta", type=float, default=0.05)
     args = parser.parse_args()
 
-    controller = FlexivController(args.robot_sn)
+    controller = FlexivController(args.robot_sn, False)
     await controller.start()
     try:
         if not 0 <= args.joint < controller.dof:

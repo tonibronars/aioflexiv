@@ -56,11 +56,16 @@ class FlexivRobotInterface:
     @property
     def torque_limit(self) -> np.ndarray:
         tau_max = np.asarray(self.info.get("tau_max", []), dtype=float)
-        if tau_max.size == self.dof and np.all(tau_max > 0):
-            return tau_max
-        if self.dof == 7:
-            return np.array([87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0])
-        return np.ones(self.dof) * 20.0
+        if (
+            tau_max.shape == (self.dof,)
+            and np.all(np.isfinite(tau_max))
+            and np.all(tau_max > 0)
+        ):
+            return tau_max.copy()
+        raise RuntimeError(
+            "Flexiv RDK did not report valid RobotInfo.tau_max torque limits; "
+            "refusing to use guessed fallback limits."
+        )
 
     def start(self) -> None:
         if self._ctrl is not None:
@@ -131,4 +136,3 @@ class FlexivRobotInterface:
             self.friction_comp_scale,
         )
         self._last_torque = tau.copy()
-

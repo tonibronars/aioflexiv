@@ -26,8 +26,8 @@ async def main() -> int:
         await controller.move()
 
         controller.switch("impedance")
-        controller.kp = np.ones(controller.dof) * 60.0
-        controller.kd = np.ones(controller.dof) * 4.0
+        controller.kp = np.ones(controller.dof) * 1024.0
+        controller.kd = np.ones(controller.dof) * 24.0
         controller.set_freq(50)
 
         q0 = controller.initial_qpos.copy()

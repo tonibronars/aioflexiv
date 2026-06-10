@@ -25,6 +25,25 @@ bool TimestampChanged(
     return lhs.first != rhs.first || lhs.second != rhs.second;
 }
 
+void EnsureOperational(rdk::Robot& robot, int timeout_sec = 30)
+{
+    if (robot.operational()) {
+        return;
+    }
+
+    robot.Enable();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (robot.operational()) {
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    throw std::runtime_error("Timed out waiting for Flexiv robot to become operational");
+}
+
 class ActiveTorqueControl {
 public:
     ActiveTorqueControl(const std::string& robot_sn,
@@ -32,6 +51,7 @@ public:
         : robot_(robot_sn, network_interface_whitelist, verbose)
         , model_(robot_)
     {
+        EnsureOperational(robot_);
         robot_.SwitchMode(rdk::Mode::RT_JOINT_TORQUE);
         last_timestamp_ = robot_.states().timestamp;
     }

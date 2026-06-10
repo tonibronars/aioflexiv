@@ -15,7 +15,7 @@ async def main() -> int:
     parser.add_argument("robot_sn", nargs="?", default="Rizon4s-063533")
     args = parser.parse_args()
 
-    controller = FlexivController(args.robot_sn)
+    controller = FlexivController(args.robot_sn, friction_comp_scale = 99, ext_offset = True)
     await controller.start()
     try:
         base = np.ones(controller.dof)
@@ -25,8 +25,11 @@ async def main() -> int:
             print("Moving to initial position...")
         await controller.move()
 
+        await asyncio.sleep(3.0)
+        print("starting torque hold with zero torque command. Keep clear of the robot.")
+
         controller.switch("torque")
-        controller.set_freq(50)
+        controller.set_freq(10)
         zero_torque = np.zeros(controller.dof)
         while True:
             await controller.set("torque", zero_torque)

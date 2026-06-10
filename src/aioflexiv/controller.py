@@ -59,6 +59,8 @@ class FlexivController:
         enable_soft_limits: bool = True,
         friction_comp_scale: float = 100.0,
         ext_offset: bool = True,
+        clip: bool = True,
+        torque_diff_limit: float | None = None,
     ) -> None:
         if isinstance(robot, FlexivRobotInterface):
             self.robot = robot
@@ -86,9 +88,9 @@ class FlexivController:
         self.null_kd = np.ones(7) * 1.0
         self.torque = np.zeros(7)
 
-        self.clip = True
-        self.torque_diff_limit = 990.0
-        self.torque_limit = np.array([87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0])
+        self.clip = bool(clip)
+        self.torque_diff_limit = torque_diff_limit
+        self.torque_limit: np.ndarray | None = None
 
         self.initial_qpos: np.ndarray | None = None
         self.initial_ee: np.ndarray | None = None
@@ -112,7 +114,7 @@ class FlexivController:
         self.null_kp = _as_vector(self.null_kp, dof, "null_kp")
         self.null_kd = _as_vector(self.null_kd, dof, "null_kd")
         self.torque = _as_vector(self.torque, dof, "torque")
-        self.torque_limit = self.robot.torque_limit
+        self.torque_limit = _as_vector(self.robot.torque_limit, dof, "torque_limit")
         self._last_commanded_torque = np.zeros(dof)
         if self.tau_ext_offset is None:
             self.tau_ext_offset = np.zeros(dof)
@@ -252,9 +254,14 @@ class FlexivController:
             if self._last_commanded_torque is None
             else self._last_commanded_torque
         )
-        max_delta = self.torque_diff_limit * dt
-        tau = last + np.clip(tau - last, -max_delta, max_delta)
-        tau = np.clip(tau, -self.torque_limit, self.torque_limit)
+        if self.torque_diff_limit is not None:
+            torque_diff_limit = float(self.torque_diff_limit)
+            if torque_diff_limit <= 0:
+                raise ValueError("torque_diff_limit must be positive or None")
+            max_delta = torque_diff_limit * dt
+            tau = last + np.clip(tau - last, -max_delta, max_delta)
+        if self.torque_limit is not None:
+            tau = np.clip(tau, -self.torque_limit, self.torque_limit)
         self._last_commanded_torque = tau.copy()
         return tau
 

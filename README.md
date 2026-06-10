@@ -14,6 +14,11 @@ By default, `FlexivController(ext_offset=True)` records the initial `tau_ext`
 when the torque loop starts and sends `commanded_torque - initial_tau_ext` to the
 robot. Pass `ext_offset=False` to disable this compensation.
 
+Torque clipping is enabled by default and uses Flexiv RDK `RobotInfo::tau_max`.
+No torque-rate limit is guessed by default; set
+`controller.torque_diff_limit = <Nm/s>` if you want an extra user-space slew
+limit.
+
 ```bash
 aioflexiv-zero-torque Rizon4s-063533
 ```
