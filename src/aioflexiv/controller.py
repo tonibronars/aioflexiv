@@ -5,7 +5,6 @@ import threading
 import time
 
 import numpy as np
-from ruckig import InputParameter, Result, Ruckig, Trajectory
 
 from .robot import FlexivRobotInterface
 
@@ -335,6 +334,7 @@ class FlexivController:
             raise RuntimeError("Call await controller.start() before move()")
         if freq <= 0:
             raise ValueError("freq must be positive")
+        from ruckig import InputParameter, Result, Ruckig, Trajectory
 
         self.switch("impedance")
         self.set_freq(freq)

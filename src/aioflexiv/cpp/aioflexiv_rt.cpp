@@ -187,6 +187,11 @@ public:
         result["tcp_pose"] = state.tcp_pose;
         result["tcp_vel"] = state.tcp_vel;
         result["flange_pose"] = state.flange_pose;
+        result["ft_sensor_raw"] = state.ft_sensor_raw;
+        result["ext_wrench_in_tcp"] = state.ext_wrench_in_tcp;
+        result["ext_wrench_in_world"] = state.ext_wrench_in_world;
+        result["ext_wrench_in_tcp_raw"] = state.ext_wrench_in_tcp_raw;
+        result["ext_wrench_in_world_raw"] = state.ext_wrench_in_world_raw;
         result["ee"] = model_.T(link_name).matrix();
         result["jac"] = model_.J(link_name);
         result["mm"] = model_.M();
@@ -239,7 +244,12 @@ PYBIND11_MODULE(_aioflexiv_rt, m)
         .def_readonly("dtheta", &rdk::RobotStates::dtheta)
         .def_readonly("tau", &rdk::RobotStates::tau)
         .def_readonly("tau_des", &rdk::RobotStates::tau_des)
-        .def_readonly("tau_ext", &rdk::RobotStates::tau_ext);
+        .def_readonly("tau_ext", &rdk::RobotStates::tau_ext)
+        .def_readonly("ft_sensor_raw", &rdk::RobotStates::ft_sensor_raw)
+        .def_readonly("ext_wrench_in_tcp", &rdk::RobotStates::ext_wrench_in_tcp)
+        .def_readonly("ext_wrench_in_world", &rdk::RobotStates::ext_wrench_in_world)
+        .def_readonly("ext_wrench_in_tcp_raw", &rdk::RobotStates::ext_wrench_in_tcp_raw)
+        .def_readonly("ext_wrench_in_world_raw", &rdk::RobotStates::ext_wrench_in_world_raw);
 
     py::class_<ActiveTorqueControl>(m, "ActiveTorqueControl")
         .def(py::init<const std::string&, const std::vector<std::string>&, bool, bool,
