@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+recursive-include src/aioflexiv/cpp *.cpp
+recursive-include vendor/flexiv_rdk/include *.hpp
+include vendor/flexiv_rdk/LICENSE
+
