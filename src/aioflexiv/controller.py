@@ -58,6 +58,7 @@ class FlexivController:
         enable_gravity_comp: bool = True,
         enable_soft_limits: bool = True,
         friction_comp_scale: float = 100.0,
+        ext_offset: bool = True,
     ) -> None:
         if isinstance(robot, FlexivRobotInterface):
             self.robot = robot
@@ -72,6 +73,7 @@ class FlexivController:
 
         self.state_lock = threading.Lock()
         self.type = "impedance"
+        self.ext_offset = bool(ext_offset)
         self.running = False
         self.task: asyncio.Task | None = None
         self.state: dict[str, np.ndarray] | None = None
@@ -97,6 +99,7 @@ class FlexivController:
         self._last_update_time: dict[str, float] = {}
         self._last_loop_time: float | None = None
         self._last_commanded_torque: np.ndarray | None = None
+        self.tau_ext_offset: np.ndarray | None = None
 
     @property
     def dof(self) -> int:
@@ -111,6 +114,8 @@ class FlexivController:
         self.torque = _as_vector(self.torque, dof, "torque")
         self.torque_limit = self.robot.torque_limit
         self._last_commanded_torque = np.zeros(dof)
+        if self.tau_ext_offset is None:
+            self.tau_ext_offset = np.zeros(dof)
 
     def initialize(self) -> None:
         state = self.robot.state
@@ -120,10 +125,18 @@ class FlexivController:
         self.q_desired = self.initial_qpos.copy()
         self.ee_desired = self.initial_ee.copy()
 
+    def _capture_tau_ext_offset(self) -> None:
+        if self.state is None:
+            raise RuntimeError("Controller state has not been initialized")
+        tau_ext = _as_vector(self.state["tau_ext"], self.dof, "tau_ext")
+        with self.state_lock:
+            self.tau_ext_offset = tau_ext.copy()
+
     async def start(self) -> asyncio.Task:
         self.robot.start()
         self._sync_shapes()
         self.initialize()
+        self._capture_tau_ext_offset()
         self.running = True
         self._last_loop_time = time.perf_counter()
         if self.task is None or self.task.done():
@@ -208,10 +221,25 @@ class FlexivController:
         else:
             raise ValueError(f"Unknown controller type: {self.type}")
 
+        controller_tau = tau.copy()
+        tau = self._apply_ext_offset(tau)
         tau = self._clip_torque(tau, dt)
         self.robot.step(tau)
+        state["controller_torque"] = controller_tau
         state["last_torque"] = tau.copy()
         self.state = state
+
+    def _apply_ext_offset(self, tau: np.ndarray) -> np.ndarray:
+        with self.state_lock:
+            enabled = self.ext_offset
+            offset = (
+                np.zeros_like(tau)
+                if self.tau_ext_offset is None
+                else np.asarray(self.tau_ext_offset, dtype=float).copy()
+            )
+        if not enabled:
+            return np.asarray(tau, dtype=float)
+        return np.asarray(tau, dtype=float) - offset
 
     def _clip_torque(self, tau: np.ndarray, dt: float) -> np.ndarray:
         tau = np.asarray(tau, dtype=float)

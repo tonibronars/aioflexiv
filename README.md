@@ -10,6 +10,10 @@ This package currently targets `flexivrdk==1.9.1` and exposes a small
   torque control, plus Ruckig joint-space moves through the same torque loop
 - `aioflexiv-zero-torque`: foreground zero-torque smoke test
 
+By default, `FlexivController(ext_offset=True)` records the initial `tau_ext`
+when the torque loop starts and sends `commanded_torque - initial_tau_ext` to the
+robot. Pass `ext_offset=False` to disable this compensation.
+
 ```bash
 aioflexiv-zero-torque Rizon4s-063533
 ```
