@@ -26,10 +26,10 @@ async def main() -> int:
         await controller.move()
 
         controller.switch("osc")
-        controller.ee_kp = np.array([120.0, 120.0, 120.0, 15.0, 15.0, 15.0])
-        controller.ee_kd = np.array([18.0, 18.0, 18.0, 2.5, 2.5, 2.5])
-        controller.null_kp = np.ones(controller.dof) * 3.0
-        controller.null_kd = np.ones(controller.dof) * 1.0
+        controller.ee_kp = np.array([64.0, 64.0, 64.0, 0.0, 0.0, 0.0])
+        controller.ee_kd = np.array([18.0, 18.0, 18.0, 32.0, 32.0, 32.0])
+        controller.null_kp = np.ones(controller.dof) * 10.0
+        controller.null_kd = np.ones(controller.dof) * 5.0
         controller.set_freq(50)
 
         target = controller.initial_ee.copy()

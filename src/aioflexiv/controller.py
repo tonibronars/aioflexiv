@@ -280,7 +280,7 @@ class FlexivController:
         ee = state["ee"]
         jac = state["jac"]
         mm = state["mm"]
-        ee_vel = state.get("tcp_vel", jac @ dq)
+        ee_vel = jac @ dq
 
         with self.state_lock:
             ee_goal = np.asarray(self.ee_desired, dtype=float).copy()
