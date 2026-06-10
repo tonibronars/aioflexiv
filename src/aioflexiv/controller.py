@@ -10,7 +10,10 @@ from ruckig import InputParameter, Result, Ruckig, Trajectory
 from .robot import FlexivRobotInterface
 
 
-DEFAULT_HOME_QPOS = np.array([0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853])
+# Flexiv's platform-defined Home target is only exposed through PLAN-Home /
+# primitive Home. This numeric fallback mirrors the repeated RDK example
+# refJntPos posture used for Cartesian motions.
+DEFAULT_HOME_QPOS = np.deg2rad(np.array([0.0, -40.0, 0.0, 90.0, 0.0, 40.0, 0.0]))
 
 
 def _as_vector(value, size: int, name: str) -> np.ndarray:

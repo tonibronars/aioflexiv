@@ -23,7 +23,7 @@ async def main() -> int:
             controller.kp = base * 80.0
             controller.kd = base * 4.0
             print("Moving to initial position...")
-        await controller.move([0, 0, 0.0, -1.57079, 0, 1.57079, -0.7853])
+        await controller.move()
 
         controller.switch("impedance")
         controller.kp = np.ones(controller.dof) * 60.0
