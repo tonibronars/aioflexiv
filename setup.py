@@ -39,7 +39,7 @@ ext_modules = [
     Extension(
         "aioflexiv._aioflexiv_rt",
         ["src/aioflexiv/cpp/aioflexiv_rt.cpp"],
-        include_dirs=["vendor/flexiv_rdk/include"],
+        include_dirs=["vendor/flexiv_rdk/include", "vendor/eigen"],
         language="c++",
     )
 ]
