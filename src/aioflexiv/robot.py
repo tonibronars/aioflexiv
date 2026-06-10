@@ -25,6 +25,9 @@ class FlexivRobotInterface:
         friction_comp_scale: float = 100.0,
         network_interface_whitelist: list[str] | None = None,
         verbose: bool = False,
+        auto_clear_fault: bool = True,
+        fault_clear_timeout_sec: int = 30,
+        operational_timeout_sec: int = 30,
     ) -> None:
         self.robot_sn = robot_sn
         self.link_name = link_name
@@ -33,6 +36,9 @@ class FlexivRobotInterface:
         self.friction_comp_scale = friction_comp_scale
         self.network_interface_whitelist = network_interface_whitelist or []
         self.verbose = verbose
+        self.auto_clear_fault = bool(auto_clear_fault)
+        self.fault_clear_timeout_sec = int(fault_clear_timeout_sec)
+        self.operational_timeout_sec = int(operational_timeout_sec)
 
         self._rt = None
         self._ctrl = None
@@ -72,7 +78,12 @@ class FlexivRobotInterface:
             return
         self._rt = load_rt()
         self._ctrl = self._rt.ActiveTorqueControl(
-            self.robot_sn, self.network_interface_whitelist, self.verbose
+            self.robot_sn,
+            self.network_interface_whitelist,
+            self.verbose,
+            self.auto_clear_fault,
+            self.fault_clear_timeout_sec,
+            self.operational_timeout_sec,
         )
         self._info = dict(self._ctrl.info())
         self._last_torque = np.zeros(self.dof)

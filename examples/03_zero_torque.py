@@ -15,7 +15,7 @@ async def main() -> int:
     parser.add_argument("robot_sn", nargs="?", default="Rizon4s-063533")
     args = parser.parse_args()
 
-    controller = FlexivController(args.robot_sn, friction_comp_scale = 99, ext_offset = True)
+    controller = FlexivController(args.robot_sn, friction_comp_scale = 99)
     await controller.start()
     try:
         base = np.ones(controller.dof)

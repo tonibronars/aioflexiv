@@ -61,6 +61,9 @@ class FlexivController:
         ext_offset: bool = True,
         clip: bool = True,
         torque_diff_limit: float | None = None,
+        auto_clear_fault: bool = True,
+        fault_clear_timeout_sec: int = 30,
+        operational_timeout_sec: int = 30,
     ) -> None:
         if isinstance(robot, FlexivRobotInterface):
             self.robot = robot
@@ -71,6 +74,9 @@ class FlexivController:
                 enable_gravity_comp=enable_gravity_comp,
                 enable_soft_limits=enable_soft_limits,
                 friction_comp_scale=friction_comp_scale,
+                auto_clear_fault=auto_clear_fault,
+                fault_clear_timeout_sec=fault_clear_timeout_sec,
+                operational_timeout_sec=operational_timeout_sec,
             )
 
         self.state_lock = threading.Lock()

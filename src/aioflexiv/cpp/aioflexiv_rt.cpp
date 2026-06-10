@@ -9,6 +9,7 @@
 #include <pybind11/stl.h>
 
 #include <chrono>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -25,33 +26,103 @@ bool TimestampChanged(
     return lhs.first != rhs.first || lhs.second != rhs.second;
 }
 
-void EnsureOperational(rdk::Robot& robot, int timeout_sec = 30)
+void LogStartup(const std::string& message)
+{
+    std::cout << "[aioflexiv] " << message << std::endl;
+}
+
+void LogStartupError(const std::string& message)
+{
+    std::cerr << "[aioflexiv] " << message << std::endl;
+}
+
+void EnsureOperational(rdk::Robot& robot, int timeout_sec = 30, bool auto_clear_fault = true,
+    unsigned int fault_clear_timeout_sec = 30)
 {
     if (robot.operational()) {
         return;
     }
 
+    if (robot.recovery()) {
+        LogStartupError(
+            "robot is in recovery state; refusing to run automatic recovery during start()");
+        throw std::runtime_error(
+            "Flexiv robot is in recovery state. Automatic recovery can move joints and "
+            "requires a reboot afterward; run Robot::RunAutoRecovery() intentionally instead.");
+    }
+
+    bool cleared_fault = false;
+    if (robot.fault()) {
+        LogStartup("detected robot fault before startup");
+        if (!auto_clear_fault) {
+            LogStartupError("auto_clear_fault is disabled; leaving robot in fault state");
+            throw std::runtime_error(
+                "Flexiv robot is in fault state and auto_clear_fault is disabled");
+        }
+        LogStartup("attempting ClearFault(timeout_sec="
+            + std::to_string(fault_clear_timeout_sec) + ")");
+        const bool clear_fault_ok = robot.ClearFault(fault_clear_timeout_sec);
+        const bool still_in_fault = robot.fault();
+        if (!clear_fault_ok || still_in_fault) {
+            LogStartupError("ClearFault failed: return="
+                + std::string(clear_fault_ok ? "true" : "false")
+                + ", fault_after="
+                + std::string(still_in_fault ? "true" : "false"));
+            throw std::runtime_error("Failed to clear Flexiv robot fault");
+        }
+        cleared_fault = true;
+        LogStartup("fault cleared successfully");
+    }
+
+    if (cleared_fault) {
+        LogStartup("enabling robot after fault clear");
+    }
     robot.Enable();
 
+    if (cleared_fault) {
+        LogStartup("waiting for robot to become operational (timeout_sec="
+            + std::to_string(timeout_sec) + ")");
+    }
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
     while (std::chrono::steady_clock::now() < deadline) {
+        if (robot.recovery()) {
+            LogStartupError(
+                "robot entered recovery state while waiting to become operational");
+            throw std::runtime_error(
+                "Flexiv robot entered recovery state while waiting to become operational");
+        }
+        if (robot.fault()) {
+            LogStartupError(
+                "robot entered fault state while waiting to become operational");
+            throw std::runtime_error(
+                "Flexiv robot entered fault state while waiting to become operational");
+        }
         if (robot.operational()) {
+            if (cleared_fault) {
+                LogStartup("robot is operational");
+            }
             return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
+    if (cleared_fault) {
+        LogStartupError("timed out waiting for robot to become operational");
+    }
     throw std::runtime_error("Timed out waiting for Flexiv robot to become operational");
 }
 
 class ActiveTorqueControl {
 public:
     ActiveTorqueControl(const std::string& robot_sn,
-        const std::vector<std::string>& network_interface_whitelist = {}, bool verbose = true)
+        const std::vector<std::string>& network_interface_whitelist = {}, bool verbose = true,
+        bool auto_clear_fault = true, unsigned int fault_clear_timeout_sec = 30,
+        int operational_timeout_sec = 30)
         : robot_(robot_sn, network_interface_whitelist, verbose)
         , model_(robot_)
     {
-        EnsureOperational(robot_);
+        EnsureOperational(
+            robot_, operational_timeout_sec, auto_clear_fault, fault_clear_timeout_sec);
         robot_.SwitchMode(rdk::Mode::RT_JOINT_TORQUE);
         last_timestamp_ = robot_.states().timestamp;
     }
@@ -135,6 +206,9 @@ py::dict compile_time_rt_probe()
     auto switch_mode = &rdk::Robot::SwitchMode;
     auto states = &rdk::Robot::states;
     auto stream_torque = &rdk::Robot::StreamJointTorque;
+    auto fault = &rdk::Robot::fault;
+    auto recovery = &rdk::Robot::recovery;
+    auto clear_fault = &rdk::Robot::ClearFault;
     auto model_mass = &rdk::Model::M;
     auto model_jacobian = &rdk::Model::J;
 
@@ -143,6 +217,9 @@ py::dict compile_time_rt_probe()
     result["has_switch_mode_symbol"] = switch_mode != nullptr;
     result["has_states_symbol"] = states != nullptr;
     result["has_stream_joint_torque_symbol"] = stream_torque != nullptr;
+    result["has_robot_fault_symbol"] = fault != nullptr;
+    result["has_robot_recovery_symbol"] = recovery != nullptr;
+    result["has_clear_fault_symbol"] = clear_fault != nullptr;
     result["has_model_mass_symbol"] = model_mass != nullptr;
     result["has_model_jacobian_symbol"] = model_jacobian != nullptr;
     return result;
@@ -165,9 +242,11 @@ PYBIND11_MODULE(_aioflexiv_rt, m)
         .def_readonly("tau_ext", &rdk::RobotStates::tau_ext);
 
     py::class_<ActiveTorqueControl>(m, "ActiveTorqueControl")
-        .def(py::init<const std::string&, const std::vector<std::string>&, bool>(),
+        .def(py::init<const std::string&, const std::vector<std::string>&, bool, bool,
+                 unsigned int, int>(),
             py::arg("robot_sn"), py::arg("network_interface_whitelist") = std::vector<std::string> {},
-            py::arg("verbose") = true)
+            py::arg("verbose") = true, py::arg("auto_clear_fault") = true,
+            py::arg("fault_clear_timeout_sec") = 30, py::arg("operational_timeout_sec") = 30)
         .def("read_once", &ActiveTorqueControl::read_once, py::arg("timeout_ms") = 1000,
             py::call_guard<py::gil_scoped_release>())
         .def("write_once", &ActiveTorqueControl::write_once, py::arg("torques"),

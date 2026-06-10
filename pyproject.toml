@@ -17,6 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
+aioflexiv = "aioflexiv.__main__:main"
 aioflexiv-zero-torque = "aioflexiv.zero_torque:main"
 
 [tool.setuptools]
