@@ -13,6 +13,7 @@ authors = [{ name = "Younghyo Park" }]
 dependencies = [
     "flexivrdk==1.9.1",
     "numpy",
+    "ruckig",
 ]
 
 [project.scripts]

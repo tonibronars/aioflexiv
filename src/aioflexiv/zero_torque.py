@@ -21,12 +21,8 @@ def main() -> int:
         description="Run Flexiv RT joint-torque mode with zero user-commanded torque."
     )
     parser.add_argument("robot_sn", nargs="?", default=DEFAULT_ROBOT_SN)
-    parser.add_argument("--i-am-clear", action="store_true")
     parser.add_argument("--friction-comp-scale", type=float, default=100.0)
     args = parser.parse_args()
-
-    if not args.i_am_clear:
-        raise SystemExit("Refusing to run without --i-am-clear")
 
     rt = load_rt()
     ctrl = None
@@ -89,4 +85,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

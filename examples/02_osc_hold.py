@@ -10,13 +10,21 @@ import numpy as np
 from aioflexiv import FlexivController
 
 
-async def run(robot_sn: str, clear: bool) -> None:
-    if not clear:
-        raise SystemExit("Refusing to run without --i-am-clear")
+async def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("robot_sn", nargs="?", default="Rizon4s-063533")
+    args = parser.parse_args()
 
-    controller = FlexivController(robot_sn)
+    controller = FlexivController(args.robot_sn)
     await controller.start()
     try:
+        base = np.ones(controller.dof)
+        with controller.state_lock:
+            controller.kp = base * 80.0
+            controller.kd = base * 4.0
+            print("Moving to initial position...")
+        await controller.move([0, 0, 0.0, -1.57079, 0, 1.57079, -0.7853])
+
         controller.switch("osc")
         controller.ee_kp = np.array([120.0, 120.0, 120.0, 15.0, 15.0, 15.0])
         controller.ee_kd = np.array([18.0, 18.0, 18.0, 2.5, 2.5, 2.5])
@@ -29,17 +37,8 @@ async def run(robot_sn: str, clear: bool) -> None:
             await controller.set("ee_desired", target)
     finally:
         await controller.stop()
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("robot_sn", nargs="?", default="Rizon4s-063533")
-    parser.add_argument("--i-am-clear", action="store_true")
-    args = parser.parse_args()
-    asyncio.run(run(args.robot_sn, args.i_am_clear))
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
-
+    raise SystemExit(asyncio.run(main()))

@@ -5,8 +5,12 @@ import threading
 import time
 
 import numpy as np
+from ruckig import InputParameter, Result, Ruckig, Trajectory
 
 from .robot import FlexivRobotInterface
+
+
+DEFAULT_HOME_QPOS = np.array([0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853])
 
 
 def _as_vector(value, size: int, name: str) -> np.ndarray:
@@ -266,14 +270,67 @@ class FlexivController:
 
         return feedback + null
 
-    async def move(self, qpos, *, duration: float = 3.0, freq: float = 50.0) -> None:
+    async def move(
+        self,
+        qpos=None,
+        *,
+        freq: float = 50.0,
+        max_velocity=1.0,
+        max_acceleration=2.0,
+        max_jerk=5.0,
+        minimum_duration: float | None = None,
+    ) -> None:
+        """Move to a joint target using Ruckig and the Python torque loop.
+
+        This stays inside the active `FlexivController`: it switches to the
+        Python joint-impedance controller, asks Ruckig for a smooth joint-space
+        trajectory, and updates `q_desired` at `freq` Hz while the background
+        1 kHz-ish torque loop tracks it.
+        """
+        if not self.running:
+            raise RuntimeError("Call await controller.start() before move()")
+        if freq <= 0:
+            raise ValueError("freq must be positive")
+
         self.switch("impedance")
         self.set_freq(freq)
-        start = np.asarray(self.state["qpos"] if self.state is not None else self.robot.state_minimal()["qpos"])
-        goal = np.asarray(qpos, dtype=float)
-        steps = max(int(duration * freq), 1)
-        for i in range(steps):
-            alpha = (i + 1) / steps
-            alpha = 0.5 - 0.5 * np.cos(np.pi * alpha)
-            await self.set("q_desired", (1.0 - alpha) * start + alpha * goal)
+        state = self.state if self.state is not None else self.robot.state_minimal()
+        start = np.asarray(state["qpos"], dtype=float)
+        start_vel = np.asarray(state["qvel"], dtype=float)
+        goal = (
+            DEFAULT_HOME_QPOS.copy()
+            if qpos is None
+            else np.asarray(qpos, dtype=float)
+        )
 
+        if goal.shape != (self.dof,):
+            raise ValueError(f"qpos must have shape {(self.dof,)}, got {goal.shape}")
+
+        inp = InputParameter(self.dof)
+        inp.current_position = start.tolist()
+        inp.current_velocity = start_vel.tolist()
+        inp.current_acceleration = np.zeros(self.dof).tolist()
+        inp.target_position = goal.tolist()
+        inp.target_velocity = np.zeros(self.dof).tolist()
+        inp.target_acceleration = np.zeros(self.dof).tolist()
+        inp.max_velocity = _as_vector(max_velocity, self.dof, "max_velocity").tolist()
+        inp.max_acceleration = _as_vector(
+            max_acceleration, self.dof, "max_acceleration"
+        ).tolist()
+        inp.max_jerk = _as_vector(max_jerk, self.dof, "max_jerk").tolist()
+        if minimum_duration is not None:
+            inp.minimum_duration = float(minimum_duration)
+
+        otg = Ruckig(self.dof)
+        trajectory = Trajectory(self.dof)
+        result = otg.calculate(inp, trajectory)
+        if result not in (Result.Working, Result.Finished):
+            raise RuntimeError(f"Ruckig failed to generate trajectory: {result}")
+
+        steps = max(int(np.ceil(trajectory.duration * freq)), 1)
+        for i in range(steps):
+            t = min((i + 1) / freq, trajectory.duration)
+            q_desired, _, _ = trajectory.at_time(t)
+            await self.set("q_desired", np.asarray(q_desired, dtype=float))
+
+        await self.set("q_desired", goal)

@@ -25,14 +25,11 @@ async def main() -> int:
             print("Moving to initial position...")
         await controller.move([0, 0, 0.0, -1.57079, 0, 1.57079, -0.7853])
 
-        controller.switch("impedance")
-        controller.kp = np.ones(controller.dof) * 60.0
-        controller.kd = np.ones(controller.dof) * 4.0
+        controller.switch("torque")
         controller.set_freq(50)
-
-        q0 = controller.initial_qpos.copy()
+        zero_torque = np.zeros(controller.dof)
         while True:
-            await controller.set("q_desired", q0)
+            await controller.set("torque", zero_torque)
     finally:
         await controller.stop()
     return 0

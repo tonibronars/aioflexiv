@@ -7,11 +7,11 @@ This package currently targets `flexivrdk==1.9.1` and exposes a small
 
 - `FlexivRobotInterface`: low-level Python-owned RT torque loop bridge
 - `FlexivController`: async joint impedance, operational-space, and direct
-  torque control
+  torque control, plus Ruckig joint-space moves through the same torque loop
 - `aioflexiv-zero-torque`: foreground zero-torque smoke test
 
 ```bash
-aioflexiv-zero-torque Rizon4s-063533 --i-am-clear
+aioflexiv-zero-torque Rizon4s-063533
 ```
 
 The command switches the robot to `RT_JOINT_TORQUE` and repeatedly sends zero
@@ -29,8 +29,8 @@ From this repository:
 pip install .
 ```
 
-That single install pulls `flexivrdk==1.9.1`, builds the tiny pybind11 shim, and
-installs the `aioflexiv-zero-torque` console command.
+That single install pulls `flexivrdk==1.9.1` and `ruckig`, builds the tiny
+pybind11 shim, and installs the `aioflexiv-zero-torque` console command.
 
 ## Joint Impedance
 
@@ -54,6 +54,28 @@ async def main():
         await controller.set("q_desired", target)
 
     await controller.stop()
+
+asyncio.run(main())
+```
+
+## Trajectory Move
+
+For point-to-point joint motions, `FlexivController.move()` follows the same
+shape as `aiofranka`: it generates a jerk-limited Ruckig trajectory, switches to
+the Python joint-impedance controller, and updates `q_desired` at 50 Hz while the
+background torque loop tracks it.
+
+```python
+import asyncio
+from aioflexiv import FlexivController
+
+async def main():
+    controller = FlexivController("Rizon4s-063533")
+    await controller.start()
+    try:
+        await controller.move()
+    finally:
+        await controller.stop()
 
 asyncio.run(main())
 ```

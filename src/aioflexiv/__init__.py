@@ -8,4 +8,9 @@ from .robot import FlexivRobotInterface
 
 __version__ = version("aioflexiv")
 
-__all__ = ["__version__", "FlexivController", "FlexivRobotInterface", "load_rt"]
+__all__ = [
+    "__version__",
+    "FlexivController",
+    "FlexivRobotInterface",
+    "load_rt",
+]
