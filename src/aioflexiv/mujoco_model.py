@@ -30,6 +30,12 @@ def default_mujoco_model_path(model_name: str | None = None) -> Path:
     return model_dir / "flexiv_rizon4" / "flexiv_rizon4.xml"
 
 
+def default_mujoco_scene_path(model_name: str | None = None) -> Path:
+    model_path = default_mujoco_model_path(model_name)
+    scene_path = model_path.with_name("scene.xml")
+    return scene_path if scene_path.exists() else model_path
+
+
 class MujocoModelBackend:
     def __init__(
         self,
@@ -104,6 +110,9 @@ class MujocoModelBackend:
             "mujoco_frame_type": np.asarray([self.frame_type], dtype=object),
             "mujoco_frame_name": np.asarray([self.frame_name], dtype=object),
         }
+
+    def gravity(self, qpos: np.ndarray) -> np.ndarray:
+        return self._gravity(np.asarray(qpos, dtype=float))
 
     def _ee(self) -> np.ndarray:
         ee = np.eye(4)

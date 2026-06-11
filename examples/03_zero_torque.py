@@ -11,7 +11,11 @@ from aioflexiv import FlexivController
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description=(
+            "Stream zero user torque on hardware, or pass robot_sn=mujoco to run MuJoCo."
+        )
+    )
     parser.add_argument("robot_sn", nargs="?")
     args = parser.parse_args()
 

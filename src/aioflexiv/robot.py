@@ -2,14 +2,27 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import time
 import warnings
 
 import numpy as np
 
 from ._loader import load_rt
 from .config import resolve_robot_sn, save_last_robot_sn
-from .mujoco_model import MujocoModelBackend, default_mujoco_model_path
+from .mujoco_model import (
+    MujocoModelBackend,
+    default_mujoco_model_path,
+    default_mujoco_scene_path,
+)
 from .tools import switch_active_tool
+
+
+MUJOCO_ROBOT_SN = "mujoco"
+DEFAULT_MUJOCO_TIMESTEP = 0.001
+
+
+def is_mujoco_robot_sn(robot_sn: str | None) -> bool:
+    return isinstance(robot_sn, str) and robot_sn.strip().lower() == MUJOCO_ROBOT_SN
 
 
 class FlexivRobotInterface:
@@ -34,7 +47,7 @@ class FlexivRobotInterface:
         auto_clear_fault: bool = True,
         fault_clear_timeout_sec: int = 30,
         operational_timeout_sec: int = 30,
-        model_backend: str = "rdk",
+        model_backend: str = "mujoco",
         mujoco_model_path: str | Path | None = None,
         mujoco_site_name: str | None = None,
         mujoco_body_name: str = "link7",
@@ -184,7 +197,7 @@ class FlexivRobotInterface:
     def state_minimal(self, timeout_ms: int = 1000) -> dict[str, np.ndarray]:
         ctrl = self._require_started()
         raw = ctrl.read_once(timeout_ms)
-        return {
+        state = {
             "timestamp": tuple(raw.timestamp),
             "qpos": np.asarray(raw.q, dtype=float),
             "qvel": np.asarray(raw.dtheta, dtype=float),
@@ -196,6 +209,22 @@ class FlexivRobotInterface:
             "tau_ext": np.asarray(raw.tau_ext, dtype=float),
             "last_torque": self._last_or_raw_torque(raw),
         }
+        if getattr(self, "model_backend", "rdk") == "mujoco":
+            state["model_backend"] = np.asarray(["mujoco"], dtype=object)
+            state["mujoco_velocity_source"] = np.asarray(
+                [self.mujoco_velocity_source], dtype=object
+            )
+            if self._mujoco_backend is not None:
+                state["mujoco_model_path"] = np.asarray(
+                    [str(self._mujoco_backend.path)], dtype=object
+                )
+                state["mujoco_frame_type"] = np.asarray(
+                    [self._mujoco_backend.frame_type], dtype=object
+                )
+                state["mujoco_frame_name"] = np.asarray(
+                    [self._mujoco_backend.frame_name], dtype=object
+                )
+        return state
 
     @property
     def state(self) -> dict[str, np.ndarray]:
@@ -271,3 +300,358 @@ class FlexivRobotInterface:
             self.friction_comp_scale,
         )
         self._last_torque = tau.copy()
+
+
+class MujocoRobotInterface:
+    """MuJoCo-backed robot interface with the same surface as the RT bridge."""
+
+    def __init__(
+        self,
+        robot_sn: str | None = MUJOCO_ROBOT_SN,
+        *,
+        link_name: str = "flange",
+        tool: str | None = None,
+        enable_gravity_comp: bool = True,
+        enable_soft_limits: bool = True,
+        friction_comp_scale: float = 100.0,
+        network_interface_whitelist: list[str] | None = None,
+        verbose: bool = False,
+        model_backend: str = "mujoco",
+        mujoco_model_path: str | Path | None = None,
+        mujoco_site_name: str | None = None,
+        mujoco_body_name: str = "link7",
+        mujoco_velocity_source: str = "dtheta",
+        mujoco_viewer: bool = True,
+        mujoco_realtime: bool = True,
+        mujoco_timestep: float = DEFAULT_MUJOCO_TIMESTEP,
+        mujoco_initial_qpos: np.ndarray | list[float] | None = None,
+    ) -> None:
+        if robot_sn is not None and not is_mujoco_robot_sn(robot_sn):
+            raise ValueError("MujocoRobotInterface robot_sn must be 'mujoco'")
+        self.robot_sn = MUJOCO_ROBOT_SN
+        self.link_name = link_name
+        self.tool = tool
+        self.enable_gravity_comp = bool(enable_gravity_comp)
+        self.enable_soft_limits = bool(enable_soft_limits)
+        self.friction_comp_scale = float(friction_comp_scale)
+        self.network_interface_whitelist = network_interface_whitelist or []
+        self.verbose = verbose
+        self.model_backend = str(model_backend).lower()
+        if self.model_backend != "mujoco":
+            raise ValueError("MuJoCo simulation requires model_backend='mujoco'")
+        self.mujoco_model_path = (
+            None
+            if mujoco_model_path is None
+            else Path(mujoco_model_path).expanduser()
+        )
+        self.mujoco_site_name = mujoco_site_name
+        self.mujoco_body_name = mujoco_body_name
+        self.mujoco_velocity_source = str(mujoco_velocity_source).lower()
+        if self.mujoco_velocity_source not in {"dq", "dtheta"}:
+            raise ValueError("mujoco_velocity_source must be 'dq' or 'dtheta'")
+        self.mujoco_viewer = bool(mujoco_viewer)
+        self.mujoco_realtime = bool(mujoco_realtime)
+        self.mujoco_timestep = float(mujoco_timestep)
+        if self.mujoco_timestep <= 0.0:
+            raise ValueError("mujoco_timestep must be positive")
+        self.mujoco_initial_qpos = (
+            None
+            if mujoco_initial_qpos is None
+            else np.asarray(mujoco_initial_qpos, dtype=float)
+        )
+
+        self._mujoco = None
+        self._mujoco_backend: MujocoModelBackend | None = None
+        self._viewer = None
+        self._info: dict[str, Any] | None = None
+        self._last_torque: np.ndarray | None = None
+        self._last_total_torque: np.ndarray | None = None
+        self._joint_limited: np.ndarray | None = None
+        self._last_wall_time: float | None = None
+        self._started = False
+
+    @property
+    def started(self) -> bool:
+        return self._started
+
+    @property
+    def info(self) -> dict[str, Any]:
+        if self._info is None:
+            raise RuntimeError("MuJoCo robot interface has not been started")
+        return self._info
+
+    @property
+    def dof(self) -> int:
+        return int(self.info["dof"])
+
+    @property
+    def model(self):
+        backend = self._require_started()
+        return backend.model
+
+    @property
+    def data(self):
+        backend = self._require_started()
+        return backend.data
+
+    @property
+    def torque_limit(self) -> np.ndarray:
+        return np.asarray(self.info["tau_max"], dtype=float).copy()
+
+    def start(self) -> None:
+        if self._started:
+            return
+
+        model_path = (
+            self.mujoco_model_path
+            if self.mujoco_model_path is not None
+            else default_mujoco_scene_path("Rizon4")
+        )
+        self._mujoco_backend = MujocoModelBackend(
+            model_path,
+            site_name=self.mujoco_site_name,
+            body_name=self.mujoco_body_name,
+        )
+        self._mujoco = self._mujoco_backend._mujoco
+        self._mujoco_backend.model.opt.timestep = self.mujoco_timestep
+        self._disable_builtin_actuators()
+        self._joint_limited = np.asarray(
+            self._mujoco_backend.model.jnt_limited, dtype=np.uint8
+        ).copy()
+        self._reset_initial_state()
+
+        dof = int(self._mujoco_backend.model.nv)
+        tau_max = self._torque_limits()
+        q_range = np.asarray(self._mujoco_backend.model.jnt_range[:dof], dtype=float)
+        self._info = {
+            "serial_num": MUJOCO_ROBOT_SN,
+            "software_ver": "mujoco",
+            "model_name": self._sim_model_name(),
+            "license_type": "simulation",
+            "dof": dof,
+            "manipulator_dof": dof,
+            "q_min": q_range[:, 0].tolist(),
+            "q_max": q_range[:, 1].tolist(),
+            "dq_max": [float("inf")] * dof,
+            "tau_max": tau_max.tolist(),
+            "K_q_nom": [0.0] * dof,
+            "K_x_nom": [0.0] * 6,
+            "has_FT_sensor": False,
+            "simulated": True,
+            "mujoco_model_path": str(self._mujoco_backend.path),
+            "mujoco_timestep": self.mujoco_timestep,
+        }
+        self._last_torque = np.zeros(dof)
+        self._last_total_torque = np.zeros(dof)
+        self._last_wall_time = time.perf_counter()
+        self._started = True
+        if self.mujoco_viewer:
+            self._open_viewer()
+
+    def stop(self) -> None:
+        self._close_viewer()
+        self._started = False
+        self._mujoco = None
+        self._mujoco_backend = None
+        self._info = None
+        self._last_wall_time = None
+
+    def _require_started(self) -> MujocoModelBackend:
+        if self._mujoco_backend is None or self._mujoco is None or not self._started:
+            raise RuntimeError("MuJoCo robot interface has not been started")
+        return self._mujoco_backend
+
+    def _sim_model_name(self) -> str:
+        backend = self._require_loaded()
+        path_text = str(backend.path).lower()
+        if "rizon4s" in path_text:
+            return "Rizon4S"
+        if "rizon4" in path_text:
+            return "Rizon4"
+        return backend.path.stem
+
+    def _disable_builtin_actuators(self) -> None:
+        backend = self._require_loaded()
+        model = backend.model
+        data = backend.data
+        if model.nu:
+            model.actuator_gainprm[:, :] = 0.0
+            model.actuator_biasprm[:, :] = 0.0
+            data.ctrl[:] = 0.0
+
+    def _require_loaded(self) -> MujocoModelBackend:
+        if self._mujoco_backend is None or self._mujoco is None:
+            raise RuntimeError("MuJoCo model has not been loaded")
+        return self._mujoco_backend
+
+    def _reset_initial_state(self) -> None:
+        backend = self._require_loaded()
+        model = backend.model
+        data = backend.data
+        if self.mujoco_initial_qpos is not None:
+            qpos = self.mujoco_initial_qpos
+        elif model.nkey:
+            qpos = np.asarray(model.key_qpos[0], dtype=float)
+        else:
+            qpos = np.zeros(model.nq)
+        if qpos.shape != (model.nq,):
+            raise ValueError(f"mujoco_initial_qpos must have shape {(model.nq,)}")
+        data.qpos[:] = qpos
+        data.qvel[:] = 0.0
+        data.qacc[:] = 0.0
+        data.qfrc_applied[:] = 0.0
+        self._mujoco.mj_forward(model, data)
+
+    def _torque_limits(self) -> np.ndarray:
+        backend = self._require_loaded()
+        model = backend.model
+        dof = int(model.nv)
+        ranges = np.asarray(model.jnt_actfrcrange[:dof], dtype=float)
+        limited = np.asarray(model.jnt_actfrclimited[:dof], dtype=bool)
+        limits = np.maximum(np.abs(ranges[:, 0]), np.abs(ranges[:, 1]))
+        if ranges.shape != (dof, 2) or not np.all(limited) or np.any(limits <= 0):
+            return np.ones(dof) * np.inf
+        return limits
+
+    def _open_viewer(self) -> None:
+        backend = self._require_started()
+        try:
+            import mujoco.viewer
+
+            self._viewer = mujoco.viewer.launch_passive(backend.model, backend.data)
+        except Exception as exc:
+            warnings.warn(
+                f"Could not open MuJoCo viewer; continuing headless: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self._viewer = None
+
+    def _close_viewer(self) -> None:
+        viewer = self._viewer
+        self._viewer = None
+        if viewer is None:
+            return
+        try:
+            viewer.close()
+        except Exception:
+            pass
+
+    def _sync_viewer(self) -> None:
+        viewer = self._viewer
+        if viewer is None:
+            return
+        try:
+            if hasattr(viewer, "is_running") and not viewer.is_running():
+                self._close_viewer()
+                return
+            viewer.sync()
+        except Exception as exc:
+            warnings.warn(
+                f"MuJoCo viewer sync failed; closing viewer: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self._close_viewer()
+
+    def _timestamp(self) -> tuple[int, int]:
+        t = float(self.data.time)
+        seconds = int(t)
+        nanoseconds = int(round((t - seconds) * 1e9))
+        if nanoseconds >= 1_000_000_000:
+            seconds += 1
+            nanoseconds -= 1_000_000_000
+        return seconds, nanoseconds
+
+    def state_minimal(self, timeout_ms: int = 1000) -> dict[str, np.ndarray]:
+        del timeout_ms
+        backend = self._require_started()
+        self._mujoco.mj_forward(backend.model, backend.data)
+        qpos = np.asarray(backend.data.qpos, dtype=float).copy()
+        qvel = np.asarray(backend.data.qvel, dtype=float).copy()
+        tau = (
+            np.zeros(self.dof)
+            if self._last_total_torque is None
+            else self._last_total_torque.copy()
+        )
+        tau_des = (
+            np.zeros(self.dof)
+            if self._last_torque is None
+            else self._last_torque.copy()
+        )
+        return {
+            "timestamp": self._timestamp(),
+            "qpos": qpos,
+            "qvel": qvel,
+            "dq": qvel.copy(),
+            "theta": qpos.copy(),
+            "dtheta": qvel.copy(),
+            "tau": tau,
+            "tau_des": tau_des,
+            "tau_ext": np.zeros(self.dof),
+            "last_torque": tau_des.copy(),
+            "model_backend": np.asarray(["mujoco"], dtype=object),
+            "mujoco_velocity_source": np.asarray(
+                [self.mujoco_velocity_source], dtype=object
+            ),
+            "mujoco_model_path": np.asarray([str(backend.path)], dtype=object),
+            "mujoco_frame_type": np.asarray([backend.frame_type], dtype=object),
+            "mujoco_frame_name": np.asarray([backend.frame_name], dtype=object),
+            "mujoco_timestep": np.asarray(
+                [float(backend.model.opt.timestep)], dtype=float
+            ),
+        }
+
+    @property
+    def state(self) -> dict[str, np.ndarray]:
+        backend = self._require_started()
+        minimal = self.state_minimal()
+        model_state = backend.state(minimal["qpos"], minimal["qvel"])
+        state = {
+            **minimal,
+            "tcp_pose": np.zeros(7),
+            "tcp_vel": np.zeros(6),
+            "flange_pose": np.zeros(7),
+            "ft_sensor_raw": np.zeros(6),
+            "ext_wrench_in_tcp": np.zeros(6),
+            "ext_wrench_in_world": np.zeros(6),
+            "ext_wrench_in_tcp_raw": np.zeros(6),
+            "ext_wrench_in_world_raw": np.zeros(6),
+            "model_backend": np.asarray(["mujoco"], dtype=object),
+            "mujoco_velocity_source": np.asarray(
+                [self.mujoco_velocity_source], dtype=object
+            ),
+        }
+        state.update(model_state)
+        return state
+
+    def step(self, torque: np.ndarray | list[float]) -> None:
+        backend = self._require_started()
+        tau = np.asarray(torque, dtype=float)
+        if tau.shape != (self.dof,):
+            raise ValueError(f"Expected torque shape {(self.dof,)}, got {tau.shape}")
+
+        if self.mujoco_realtime:
+            now = time.perf_counter()
+            last_wall_time = self._last_wall_time or now
+            target_time = last_wall_time + float(backend.model.opt.timestep)
+            sleep_time = target_time - now
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            self._last_wall_time = time.perf_counter()
+
+        if self._joint_limited is not None:
+            backend.model.jnt_limited[:] = (
+                self._joint_limited if self.enable_soft_limits else 0
+            )
+
+        self._mujoco.mj_forward(backend.model, backend.data)
+        tau_total = tau.copy()
+        if self.enable_gravity_comp:
+            tau_total = tau_total + backend.gravity(backend.data.qpos)
+        backend.data.qfrc_applied[:] = tau_total
+        self._mujoco.mj_step(backend.model, backend.data)
+        self._mujoco.mj_forward(backend.model, backend.data)
+        self._last_torque = tau.copy()
+        self._last_total_torque = tau_total.copy()
+        self._sync_viewer()

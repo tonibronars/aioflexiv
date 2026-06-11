@@ -62,6 +62,10 @@ aioflexiv stores it in `~/.config/aioflexiv/config.json`; later scripts can use
 Pass `tool="<TOOL_NAME>"` to switch the robot's active Flexiv tool before the
 real-time torque loop starts.
 
+Use `FlexivController("mujoco")` to run the same controller against the bundled
+MuJoCo Flexiv scene instead of hardware. The simulator opens a passive MuJoCo
+viewer when the platform supports it and advances physics at 1 kHz by default.
+
 ```python
 import asyncio
 import numpy as np
@@ -228,12 +232,12 @@ await controller.set("q_desired", target_qpos)
 
 ### 2. Operational Space
 
-End-effector pose control. By default the library uses Flexiv RDK model data;
-pass `model_backend="mujoco"` to compute the end-effector pose, Jacobian, and
-mass matrix from the bundled MuJoCo Flexiv model instead:
+End-effector pose control. By default the library computes end-effector pose,
+Jacobian, mass matrix, Coriolis, and gravity terms from the bundled MuJoCo
+Flexiv model:
 
 ```python
-controller = FlexivController("<ROBOT_SN>", model_backend="mujoco")
+controller = FlexivController("<ROBOT_SN>")
 await controller.start()
 
 controller.switch("osc")
@@ -249,7 +253,8 @@ await controller.set("ee_desired", target)
 
 If automatic model selection cannot read `RobotInfo.model_name`, pass
 `mujoco_model_path="models/flexiv_rizon4/flexiv_rizon4.xml"` or the matching
-Rizon4S XML explicitly.
+Rizon4S XML explicitly. Pass `model_backend="rdk"` only when you explicitly want
+to compare against Flexiv RDK model data.
 
 ### 3. Direct Torque
 
@@ -276,12 +281,15 @@ await controller.move([0.0, -0.7, 0.0, 1.57, 0.0, 0.7, 0.0])
 ## Examples
 
 ```bash
+python examples/00_move.py mujoco
 python examples/01_joint_impedance.py <ROBOT_SN>
 python examples/02_osc_hold.py <ROBOT_SN>
 ```
 
-`examples/02_osc_hold.py` defaults to the MuJoCo backend. Add
-`--model-backend rdk` to compare against the Flexiv RDK model path.
+Use `mujoco` in place of `<ROBOT_SN>` in the controller examples to open the
+MuJoCo simulator. `examples/02_osc_hold.py` also accepts `--model-backend rdk`
+when connected to real hardware for comparison against the Flexiv RDK model
+path.
 
 ## License
 

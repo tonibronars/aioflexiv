@@ -4,8 +4,12 @@ from importlib.metadata import PackageNotFoundError, version
 
 from ._loader import load_rt
 from .controller import FlexivController
-from .mujoco_model import MujocoModelBackend, default_mujoco_model_path
-from .robot import FlexivRobotInterface
+from .mujoco_model import (
+    MujocoModelBackend,
+    default_mujoco_model_path,
+    default_mujoco_scene_path,
+)
+from .robot import DEFAULT_MUJOCO_TIMESTEP, FlexivRobotInterface, MujocoRobotInterface
 
 try:
     __version__ = version("aioflexiv")
@@ -15,8 +19,11 @@ except PackageNotFoundError:
 __all__ = [
     "__version__",
     "FlexivController",
+    "DEFAULT_MUJOCO_TIMESTEP",
     "FlexivRobotInterface",
     "MujocoModelBackend",
+    "MujocoRobotInterface",
     "default_mujoco_model_path",
+    "default_mujoco_scene_path",
     "load_rt",
 ]

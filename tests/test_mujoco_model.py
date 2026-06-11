@@ -5,7 +5,11 @@ import unittest
 
 import numpy as np
 
-from aioflexiv.mujoco_model import MujocoModelBackend, default_mujoco_model_path
+from aioflexiv.mujoco_model import (
+    MujocoModelBackend,
+    default_mujoco_model_path,
+    default_mujoco_scene_path,
+)
 
 
 @unittest.skipIf(importlib.util.find_spec("mujoco") is None, "mujoco is not installed")
@@ -19,6 +23,7 @@ class MujocoModelBackendTests(unittest.TestCase):
             default_mujoco_model_path("Rizon4S").name,
             "flexiv_rizon4s.xml",
         )
+        self.assertEqual(default_mujoco_scene_path("Rizon4").name, "scene.xml")
 
     def test_backend_computes_kinematics_and_dynamics_for_bundled_models(self) -> None:
         for model_name in ("Rizon4", "Rizon4S"):

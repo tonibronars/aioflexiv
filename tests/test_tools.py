@@ -22,7 +22,7 @@ class _FakeActiveTorqueControl:
         self.kwargs = kwargs
 
     def info(self) -> dict:
-        return {"dof": 7, "tau_max": [1.0] * 7}
+        return {"dof": 7, "tau_max": [1.0] * 7, "model_name": "Rizon4"}
 
 
 class _FakeRt:
@@ -145,6 +145,7 @@ class ToolTests(unittest.TestCase):
             tool="gripper",
             network_interface_whitelist=["192.168.2.10"],
             verbose=True,
+            model_backend="rdk",
         )
         with (
             patch("aioflexiv.robot.switch_active_tool") as switch_active_tool,

@@ -7,7 +7,12 @@ import time
 
 import numpy as np
 
-from .robot import FlexivRobotInterface
+from .robot import (
+    DEFAULT_MUJOCO_TIMESTEP,
+    FlexivRobotInterface,
+    MujocoRobotInterface,
+    is_mujoco_robot_sn,
+)
 
 
 # Flexiv's platform-defined Home target is only exposed through PLAN-Home /
@@ -70,13 +75,13 @@ class FlexivController:
 
     Supported modes:
     - `impedance`: joint-space spring damper
-    - `osc`: operational-space control using Flexiv RDK `Model` data
+    - `osc`: operational-space control using MuJoCo model data by default
     - `torque`: direct user torque
     """
 
     def __init__(
         self,
-        robot: str | FlexivRobotInterface | None = None,
+        robot: str | FlexivRobotInterface | MujocoRobotInterface | None = None,
         *,
         link_name: str = "flange",
         tool: str | None = None,
@@ -89,16 +94,39 @@ class FlexivController:
         auto_clear_fault: bool = True,
         fault_clear_timeout_sec: int = 30,
         operational_timeout_sec: int = 30,
-        model_backend: str = "rdk",
+        model_backend: str = "mujoco",
         mujoco_model_path: str | Path | None = None,
         mujoco_site_name: str | None = None,
         mujoco_body_name: str = "link7",
         mujoco_velocity_source: str = "dtheta",
+        mujoco_viewer: bool | None = None,
+        mujoco_realtime: bool = True,
+        mujoco_timestep: float = DEFAULT_MUJOCO_TIMESTEP,
+        mujoco_initial_qpos: np.ndarray | list[float] | None = None,
     ) -> None:
-        if isinstance(robot, FlexivRobotInterface):
+        if isinstance(robot, (FlexivRobotInterface, MujocoRobotInterface)):
             self.robot = robot
             if tool is not None:
                 self.robot.tool = tool
+        elif is_mujoco_robot_sn(robot):
+            self.robot = MujocoRobotInterface(
+                robot,
+                link_name=link_name,
+                tool=tool,
+                enable_gravity_comp=enable_gravity_comp,
+                enable_soft_limits=enable_soft_limits,
+                friction_comp_scale=friction_comp_scale,
+                verbose=False,
+                model_backend=model_backend,
+                mujoco_model_path=mujoco_model_path,
+                mujoco_site_name=mujoco_site_name,
+                mujoco_body_name=mujoco_body_name,
+                mujoco_velocity_source=mujoco_velocity_source,
+                mujoco_viewer=True if mujoco_viewer is None else mujoco_viewer,
+                mujoco_realtime=mujoco_realtime,
+                mujoco_timestep=mujoco_timestep,
+                mujoco_initial_qpos=mujoco_initial_qpos,
+            )
         else:
             self.robot = FlexivRobotInterface(
                 robot,

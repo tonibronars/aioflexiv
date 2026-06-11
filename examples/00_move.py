@@ -9,7 +9,9 @@ from aioflexiv import FlexivController
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Move one joint on hardware, or pass robot_sn=mujoco to run MuJoCo."
+    )
     parser.add_argument("robot_sn", nargs="?")
     parser.add_argument("--joint", type=int, default=0)
     parser.add_argument("--delta", type=float, default=0.05)

@@ -12,7 +12,7 @@ from unittest.mock import patch
 from aioflexiv.__main__ import cmd_status
 from aioflexiv.config import config_path, resolve_robot_sn, save_last_robot_sn
 from aioflexiv.controller import FlexivController
-from aioflexiv.robot import FlexivRobotInterface
+from aioflexiv.robot import FlexivRobotInterface, MujocoRobotInterface
 
 
 class _FakeActiveTorqueControl:
@@ -24,6 +24,7 @@ class _FakeActiveTorqueControl:
         return {
             "dof": 7,
             "tau_max": [1.0] * 7,
+            "model_name": "Rizon4",
         }
 
 
@@ -70,7 +71,7 @@ class ConfigTests(unittest.TestCase):
             old_config = os.environ.get("AIOFLEXIV_CONFIG")
             os.environ["AIOFLEXIV_CONFIG"] = str(Path(tmpdir) / "config.json")
             try:
-                robot = FlexivRobotInterface("explicit-robot")
+                robot = FlexivRobotInterface("explicit-robot", model_backend="rdk")
                 with patch("aioflexiv.robot.load_rt", return_value=_FakeRt()):
                     robot.start()
 
@@ -94,6 +95,13 @@ class ConfigTests(unittest.TestCase):
                     os.environ.pop("AIOFLEXIV_CONFIG", None)
                 else:
                     os.environ["AIOFLEXIV_CONFIG"] = old_config
+
+    def test_flexiv_controller_mujoco_serial_selects_simulation(self) -> None:
+        controller = FlexivController("mujoco", mujoco_viewer=False)
+
+        self.assertIsInstance(controller.robot, MujocoRobotInterface)
+        self.assertEqual(controller.robot.robot_sn, "mujoco")
+        self.assertEqual(controller.robot.model_backend, "mujoco")
 
     def test_status_without_argument_or_saved_serial_fails_before_rdk_import(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
