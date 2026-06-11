@@ -30,13 +30,13 @@ limits, and be ready to stop the robot before running any command or script.
 
 ## Installation
 
-Install from this repository:
+Install from PyPI:
 
 ```bash
-pip install .
+pip install aioflexiv
 ```
 
-Or for development:
+Or install this repository for development:
 
 ```bash
 git clone https://github.com/Improbable-AI/aioflexiv.git
@@ -45,7 +45,7 @@ pip install -e .
 ```
 
 The install pulls `flexivrdk==1.9.1`, `numpy`, and `ruckig`, builds the
-`pybind11` RT shim, and installs the `aioflexiv` console command.
+`pybind11` RT shim from source, and installs the `aioflexiv` console command.
 
 ## Quick Start
 
