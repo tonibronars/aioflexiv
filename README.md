@@ -44,7 +44,7 @@ cd aioflexiv
 pip install -e .
 ```
 
-The install pulls `flexivrdk==1.9.1`, `numpy`, and `ruckig`, builds the
+The install pulls `flexivrdk==1.9.1`, `mujoco`, `numpy`, and `ruckig`, builds the
 `pybind11` RT shim from source, and installs the `aioflexiv` console command.
 
 ## Quick Start
@@ -228,9 +228,14 @@ await controller.set("q_desired", target_qpos)
 
 ### 2. Operational Space
 
-End-effector pose control using Flexiv RDK model data:
+End-effector pose control. By default the library uses Flexiv RDK model data;
+pass `model_backend="mujoco"` to compute the end-effector pose, Jacobian, and
+mass matrix from the bundled MuJoCo Flexiv model instead:
 
 ```python
+controller = FlexivController("<ROBOT_SN>", model_backend="mujoco")
+await controller.start()
+
 controller.switch("osc")
 controller.ee_kp = np.array([150, 150, 150, 20, 20, 20], dtype=float)
 controller.ee_kd = np.array([20, 20, 20, 3, 3, 3], dtype=float)
@@ -241,6 +246,10 @@ await controller.set("ee_desired", target)
 ```
 
 **Use case**: Cartesian holding and small task-space motions.
+
+If automatic model selection cannot read `RobotInfo.model_name`, pass
+`mujoco_model_path="models/flexiv_rizon4/flexiv_rizon4.xml"` or the matching
+Rizon4S XML explicitly.
 
 ### 3. Direct Torque
 
@@ -270,6 +279,9 @@ await controller.move([0.0, -0.7, 0.0, 1.57, 0.0, 0.7, 0.0])
 python examples/01_joint_impedance.py <ROBOT_SN>
 python examples/02_osc_hold.py <ROBOT_SN>
 ```
+
+`examples/02_osc_hold.py` defaults to the MuJoCo backend. Add
+`--model-backend rdk` to compare against the Flexiv RDK model path.
 
 ## License
 

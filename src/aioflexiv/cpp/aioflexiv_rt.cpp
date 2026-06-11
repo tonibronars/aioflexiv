@@ -158,6 +158,10 @@ public:
         const auto info = robot_.info();
 
         py::dict result;
+        result["serial_num"] = info.serial_num;
+        result["software_ver"] = info.software_ver;
+        result["model_name"] = info.model_name;
+        result["license_type"] = info.license_type;
         result["dof"] = info.DoF;
         result["manipulator_dof"] = info.DoF_m;
         result["q_min"] = info.q_min;
@@ -181,6 +185,7 @@ public:
         result["qvel"] = state.dtheta;
         result["dq"] = state.dq;
         result["theta"] = state.theta;
+        result["dtheta"] = state.dtheta;
         result["tau"] = state.tau;
         result["tau_des"] = state.tau_des;
         result["tau_ext"] = state.tau_ext;
@@ -245,6 +250,9 @@ PYBIND11_MODULE(_aioflexiv_rt, m)
         .def_readonly("tau", &rdk::RobotStates::tau)
         .def_readonly("tau_des", &rdk::RobotStates::tau_des)
         .def_readonly("tau_ext", &rdk::RobotStates::tau_ext)
+        .def_readonly("tcp_pose", &rdk::RobotStates::tcp_pose)
+        .def_readonly("tcp_vel", &rdk::RobotStates::tcp_vel)
+        .def_readonly("flange_pose", &rdk::RobotStates::flange_pose)
         .def_readonly("ft_sensor_raw", &rdk::RobotStates::ft_sensor_raw)
         .def_readonly("ext_wrench_in_tcp", &rdk::RobotStates::ext_wrench_in_tcp)
         .def_readonly("ext_wrench_in_world", &rdk::RobotStates::ext_wrench_in_world)

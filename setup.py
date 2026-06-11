@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import sys
 
 import pybind11
@@ -45,7 +46,23 @@ ext_modules = [
 ]
 
 
+def model_data_files():
+    model_root = Path("models")
+    if not model_root.exists():
+        return []
+    files_by_dir: dict[Path, list[str]] = {}
+    for path in sorted(model_root.rglob("*")):
+        if path.is_file():
+            target_dir = Path("share/aioflexiv") / path.parent
+            files_by_dir.setdefault(target_dir, []).append(str(path))
+    return [
+        (str(target_dir), files)
+        for target_dir, files in sorted(files_by_dir.items())
+    ]
+
+
 setup(
     ext_modules=ext_modules,
     cmdclass={"build_ext": BuildExt},
+    data_files=model_data_files(),
 )

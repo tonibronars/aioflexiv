@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 import threading
 import time
 
@@ -40,6 +41,30 @@ def _rotation_error_vector(R_goal: np.ndarray, R_current: np.ndarray) -> np.ndar
     return skew_vec * (angle / (2.0 * np.sin(angle)))
 
 
+def _damped_pinv(matrix: np.ndarray, *, damping: float, rcond: float) -> np.ndarray:
+    damping = float(damping)
+    rcond = float(rcond)
+    if damping < 0.0:
+        raise ValueError("damping must be non-negative")
+    if rcond < 0.0:
+        raise ValueError("rcond must be non-negative")
+
+    u, singular_values, vh = np.linalg.svd(matrix, full_matrices=False)
+    if singular_values.size == 0:
+        return np.zeros(matrix.T.shape)
+
+    cutoff = rcond * singular_values[0]
+    damping_sq = damping**2
+    inv_singular_values = np.zeros_like(singular_values)
+    keep = singular_values > cutoff
+    if damping_sq == 0.0:
+        inv_singular_values[keep] = 1.0 / singular_values[keep]
+    else:
+        kept = singular_values[keep]
+        inv_singular_values[keep] = kept / (kept * kept + damping_sq)
+    return (vh.T * inv_singular_values) @ u.T
+
+
 class FlexivController:
     """Async Python-owned torque controller for Flexiv robots.
 
@@ -64,6 +89,11 @@ class FlexivController:
         auto_clear_fault: bool = True,
         fault_clear_timeout_sec: int = 30,
         operational_timeout_sec: int = 30,
+        model_backend: str = "rdk",
+        mujoco_model_path: str | Path | None = None,
+        mujoco_site_name: str | None = None,
+        mujoco_body_name: str = "link7",
+        mujoco_velocity_source: str = "dtheta",
     ) -> None:
         if isinstance(robot, FlexivRobotInterface):
             self.robot = robot
@@ -80,6 +110,11 @@ class FlexivController:
                 auto_clear_fault=auto_clear_fault,
                 fault_clear_timeout_sec=fault_clear_timeout_sec,
                 operational_timeout_sec=operational_timeout_sec,
+                model_backend=model_backend,
+                mujoco_model_path=mujoco_model_path,
+                mujoco_site_name=mujoco_site_name,
+                mujoco_body_name=mujoco_body_name,
+                mujoco_velocity_source=mujoco_velocity_source,
             )
 
         self.state_lock = threading.Lock()
@@ -95,6 +130,8 @@ class FlexivController:
         self.ee_kd = np.array([20.0, 20.0, 20.0, 3.0, 3.0, 3.0])
         self.null_kp = np.ones(7) * 5.0
         self.null_kd = np.ones(7) * 1.0
+        self.osc_pinv_damping = 1e-3
+        self.osc_pinv_rcond = 1e-6
         self.torque = np.zeros(7)
 
         self.clip = bool(clip)
@@ -298,6 +335,8 @@ class FlexivController:
             null_kp = np.asarray(self.null_kp, dtype=float).copy()
             null_kd = np.asarray(self.null_kd, dtype=float).copy()
             q0 = np.asarray(self.initial_qpos, dtype=float).copy()
+            osc_pinv_damping = float(self.osc_pinv_damping)
+            osc_pinv_rcond = float(self.osc_pinv_rcond)
 
         twist_error = np.zeros(6)
         twist_error[:3] = ee_goal[:3, 3] - ee[:3, 3]
@@ -305,9 +344,14 @@ class FlexivController:
 
         minv = np.linalg.pinv(mm)
         mx_inv = jac @ minv @ jac.T
-        mx = np.linalg.pinv(mx_inv)
+        mx = _damped_pinv(
+            mx_inv,
+            damping=osc_pinv_damping,
+            rcond=osc_pinv_rcond,
+        )
 
-        wrench = mx @ (ee_kp * twist_error - ee_kd * ee_vel)
+        task_cmd = ee_kp * twist_error - ee_kd * ee_vel
+        wrench = mx @ task_cmd
         feedback = jac.T @ wrench
 
         jbar = minv @ jac.T @ mx
