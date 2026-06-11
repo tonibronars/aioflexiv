@@ -83,6 +83,7 @@
                     <inertial pos="0.0003 0 0.0257" mass="0.768" diaginertia="0.001 0.0009 0.0009"/>
                     <joint name="joint7" axis="0 0 1" range="-3.0543 3.0543" class="joint3"/>
                     <geom mesh="link7"/>
+                    <site name="attachment_site" pos="0 0 0.08" size="0.01" rgba="1 0 0 0.5"/>
                   </body>
                 </body>
               </body>

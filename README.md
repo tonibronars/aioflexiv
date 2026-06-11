@@ -234,7 +234,7 @@ await controller.set("q_desired", target_qpos)
 
 End-effector pose control. By default the library computes end-effector pose,
 Jacobian, mass matrix, Coriolis, and gravity terms from the bundled MuJoCo
-Flexiv model:
+Flexiv model, tracking the `attachment_site` MuJoCo site:
 
 ```python
 controller = FlexivController("<ROBOT_SN>")

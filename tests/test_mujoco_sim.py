@@ -30,8 +30,8 @@ class MujocoRobotInterfaceTests(unittest.TestCase):
             self.assertEqual(state["jac"].shape, (6, 7))
             self.assertEqual(state["mm"].shape, (7, 7))
             self.assertEqual(state["qpos"].shape, (7,))
-            self.assertEqual(state["mujoco_frame_type"][0], "body")
-            self.assertEqual(state["mujoco_frame_name"][0], "link7")
+            self.assertEqual(state["mujoco_frame_type"][0], "site")
+            self.assertEqual(state["mujoco_frame_name"][0], "attachment_site")
             self.assertEqual(state["mujoco_timestep"][0], 0.001)
             start_time = robot.data.time
 

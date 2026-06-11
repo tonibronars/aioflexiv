@@ -10,6 +10,7 @@ import numpy as np
 from ._loader import load_rt
 from .config import resolve_robot_sn, save_last_robot_sn
 from .mujoco_model import (
+    DEFAULT_MUJOCO_SITE_NAME,
     MujocoModelBackend,
     default_mujoco_model_path,
     default_mujoco_scene_path,
@@ -49,7 +50,7 @@ class FlexivRobotInterface:
         operational_timeout_sec: int = 30,
         model_backend: str = "mujoco",
         mujoco_model_path: str | Path | None = None,
-        mujoco_site_name: str | None = None,
+        mujoco_site_name: str | None = DEFAULT_MUJOCO_SITE_NAME,
         mujoco_body_name: str = "link7",
         mujoco_velocity_source: str = "dtheta",
     ) -> None:
@@ -318,7 +319,7 @@ class MujocoRobotInterface:
         verbose: bool = False,
         model_backend: str = "mujoco",
         mujoco_model_path: str | Path | None = None,
-        mujoco_site_name: str | None = None,
+        mujoco_site_name: str | None = DEFAULT_MUJOCO_SITE_NAME,
         mujoco_body_name: str = "link7",
         mujoco_velocity_source: str = "dtheta",
         mujoco_viewer: bool = True,

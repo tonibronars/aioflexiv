@@ -9,6 +9,7 @@ import numpy as np
 
 from .robot import (
     DEFAULT_MUJOCO_TIMESTEP,
+    DEFAULT_MUJOCO_SITE_NAME,
     FlexivRobotInterface,
     MujocoRobotInterface,
     is_mujoco_robot_sn,
@@ -96,7 +97,7 @@ class FlexivController:
         operational_timeout_sec: int = 30,
         model_backend: str = "mujoco",
         mujoco_model_path: str | Path | None = None,
-        mujoco_site_name: str | None = None,
+        mujoco_site_name: str | None = DEFAULT_MUJOCO_SITE_NAME,
         mujoco_body_name: str = "link7",
         mujoco_velocity_source: str = "dtheta",
         mujoco_viewer: bool | None = None,

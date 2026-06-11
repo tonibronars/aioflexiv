@@ -36,6 +36,8 @@ class MujocoModelBackendTests(unittest.TestCase):
                 self.assertEqual(state["mm"].shape, (7, 7))
                 self.assertEqual(state["coriolis"].shape, (7,))
                 self.assertEqual(state["gravity"].shape, (7,))
+                self.assertEqual(state["mujoco_frame_type"][0], "site")
+                self.assertEqual(state["mujoco_frame_name"][0], "attachment_site")
 
                 np.testing.assert_allclose(state["ee"][3], [0.0, 0.0, 0.0, 1.0])
                 mass_eigs = np.linalg.eigvalsh(0.5 * (state["mm"] + state["mm"].T))

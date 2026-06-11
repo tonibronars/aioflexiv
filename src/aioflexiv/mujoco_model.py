@@ -6,6 +6,9 @@ import sys
 import numpy as np
 
 
+DEFAULT_MUJOCO_SITE_NAME = "attachment_site"
+
+
 def _model_root() -> Path:
     module_path = Path(__file__).resolve()
     candidates = [
@@ -41,7 +44,7 @@ class MujocoModelBackend:
         self,
         model_path: str | Path,
         *,
-        site_name: str | None = None,
+        site_name: str | None = DEFAULT_MUJOCO_SITE_NAME,
         body_name: str = "link7",
     ) -> None:
         try:
