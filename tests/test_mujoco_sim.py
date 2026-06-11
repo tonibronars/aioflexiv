@@ -6,6 +6,7 @@ import unittest
 import numpy as np
 
 from aioflexiv.robot import MujocoRobotInterface
+from aioflexiv.tools import ToolPayload
 
 
 @unittest.skipIf(importlib.util.find_spec("mujoco") is None, "mujoco is not installed")
@@ -40,6 +41,29 @@ class MujocoRobotInterfaceTests(unittest.TestCase):
 
             self.assertGreater(robot.data.time, start_time)
             np.testing.assert_allclose(robot.state_minimal()["last_torque"], command)
+        finally:
+            robot.stop()
+
+    def test_simulation_accepts_explicit_tool_payload(self) -> None:
+        payload = ToolPayload(
+            name="gripper",
+            mass=1.0,
+            com=(0.0, 0.0, 0.04),
+            inertia=(0.01, 0.01, 0.01, 0.0, 0.0, 0.0),
+            tcp_location=(0.0, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0),
+        )
+        robot = MujocoRobotInterface(
+            mujoco_viewer=False,
+            mujoco_realtime=False,
+            mujoco_tool_payload=payload,
+        )
+        robot.start()
+        try:
+            state = robot.state
+            self.assertEqual(robot.info["mujoco_tool_name"], "gripper")
+            self.assertEqual(robot.info["mujoco_tool_mass"], 1.0)
+            self.assertEqual(state["mujoco_tool_name"][0], "gripper")
+            self.assertEqual(state["mujoco_tool_mass"][0], 1.0)
         finally:
             robot.stop()
 

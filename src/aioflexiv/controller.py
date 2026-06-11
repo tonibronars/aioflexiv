@@ -10,6 +10,7 @@ import numpy as np
 from .robot import (
     DEFAULT_MUJOCO_TIMESTEP,
     DEFAULT_MUJOCO_SITE_NAME,
+    AUTO_MUJOCO_TOOL_PAYLOAD,
     FlexivRobotInterface,
     MujocoRobotInterface,
     is_mujoco_robot_sn,
@@ -104,7 +105,12 @@ class FlexivController:
         mujoco_realtime: bool = True,
         mujoco_timestep: float = DEFAULT_MUJOCO_TIMESTEP,
         mujoco_initial_qpos: np.ndarray | list[float] | None = None,
+        mujoco_tool_payload=AUTO_MUJOCO_TOOL_PAYLOAD,
     ) -> None:
+        mujoco_tool_payload_auto = (
+            isinstance(mujoco_tool_payload, str)
+            and mujoco_tool_payload == AUTO_MUJOCO_TOOL_PAYLOAD
+        )
         if isinstance(robot, (FlexivRobotInterface, MujocoRobotInterface)):
             self.robot = robot
             if tool is not None:
@@ -127,6 +133,9 @@ class FlexivController:
                 mujoco_realtime=mujoco_realtime,
                 mujoco_timestep=mujoco_timestep,
                 mujoco_initial_qpos=mujoco_initial_qpos,
+                mujoco_tool_payload=None
+                if mujoco_tool_payload_auto
+                else mujoco_tool_payload,
             )
         else:
             self.robot = FlexivRobotInterface(
@@ -144,6 +153,7 @@ class FlexivController:
                 mujoco_site_name=mujoco_site_name,
                 mujoco_body_name=mujoco_body_name,
                 mujoco_velocity_source=mujoco_velocity_source,
+                mujoco_tool_payload=mujoco_tool_payload,
             )
 
         self.state_lock = threading.Lock()

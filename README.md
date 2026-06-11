@@ -60,11 +60,15 @@ Pass the serial explicitly on first use. After a successful connection,
 aioflexiv stores it in `~/.config/aioflexiv/config.json`; later scripts can use
 `FlexivController()` or `FlexivController(None)` to reuse the latest serial.
 Pass `tool="<TOOL_NAME>"` to switch the robot's active Flexiv tool before the
-real-time torque loop starts.
+real-time torque loop starts. When the MuJoCo model backend is active, aioflexiv
+also reads the active Flexiv tool payload and injects it into the MuJoCo model
+used for OSC dynamics.
 
 Use `FlexivController("mujoco")` to run the same controller against the bundled
 MuJoCo Flexiv scene instead of hardware. The simulator opens a passive MuJoCo
 viewer when the platform supports it and advances physics at 1 kHz by default.
+Import `ToolPayload` from `aioflexiv` and pass
+`mujoco_tool_payload=ToolPayload(...)` to test a simulated payload.
 
 ```python
 import asyncio
@@ -148,7 +152,8 @@ aioflexiv tool list <ROBOT_SN>
 ```
 
 Load a saved tool on the robot. Future torque loops use the robot's active tool
-for Flexiv-side gravity compensation:
+for Flexiv-side gravity compensation, and the MuJoCo OSC backend reads that same
+active tool payload at startup:
 
 ```bash
 aioflexiv tool load MyGripper <ROBOT_SN>
@@ -234,7 +239,10 @@ await controller.set("q_desired", target_qpos)
 
 End-effector pose control. By default the library computes end-effector pose,
 Jacobian, mass matrix, Coriolis, and gravity terms from the bundled MuJoCo
-Flexiv model, tracking the `attachment_site` MuJoCo site:
+Flexiv model, tracking the `attachment_site` MuJoCo site. On hardware, the active
+Flexiv tool payload is loaded into a temporary MuJoCo model before compilation,
+so OSC uses the same attached mass properties that Flexiv uses for tool gravity
+compensation:
 
 ```python
 controller = FlexivController("<ROBOT_SN>")

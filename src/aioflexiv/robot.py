@@ -15,11 +15,12 @@ from .mujoco_model import (
     default_mujoco_model_path,
     default_mujoco_scene_path,
 )
-from .tools import switch_active_tool
+from .tools import coerce_tool_payload, read_active_tool_payload, switch_active_tool
 
 
 MUJOCO_ROBOT_SN = "mujoco"
 DEFAULT_MUJOCO_TIMESTEP = 0.001
+AUTO_MUJOCO_TOOL_PAYLOAD = "auto"
 
 
 def is_mujoco_robot_sn(robot_sn: str | None) -> bool:
@@ -53,6 +54,7 @@ class FlexivRobotInterface:
         mujoco_site_name: str | None = DEFAULT_MUJOCO_SITE_NAME,
         mujoco_body_name: str = "link7",
         mujoco_velocity_source: str = "dtheta",
+        mujoco_tool_payload: Any = AUTO_MUJOCO_TOOL_PAYLOAD,
     ) -> None:
         self.robot_sn = resolve_robot_sn(robot_sn)
         self.link_name = link_name
@@ -78,12 +80,14 @@ class FlexivRobotInterface:
         self.mujoco_velocity_source = str(mujoco_velocity_source).lower()
         if self.mujoco_velocity_source not in {"dq", "dtheta"}:
             raise ValueError("mujoco_velocity_source must be 'dq' or 'dtheta'")
+        self.mujoco_tool_payload = mujoco_tool_payload
 
         self._rt = None
         self._ctrl = None
         self._info: dict[str, Any] | None = None
         self._last_torque: np.ndarray | None = None
         self._mujoco_backend: MujocoModelBackend | None = None
+        self._active_tool_payload = None
 
     @property
     def started(self) -> bool:
@@ -123,6 +127,7 @@ class FlexivRobotInterface:
                 network_interface_whitelist=self.network_interface_whitelist,
                 verbose=self.verbose,
             )
+        self._active_tool_payload = self._resolve_mujoco_tool_payload()
         self._rt = load_rt()
         self._ctrl = self._rt.ActiveTorqueControl(
             self.robot_sn,
@@ -179,7 +184,32 @@ class FlexivRobotInterface:
             model_path,
             site_name=self.mujoco_site_name,
             body_name=self.mujoco_body_name,
+            tool_payload=self._active_tool_payload,
         )
+
+    def _resolve_mujoco_tool_payload(self):
+        if self.model_backend != "mujoco":
+            return None
+        if not (
+            isinstance(self.mujoco_tool_payload, str)
+            and self.mujoco_tool_payload == AUTO_MUJOCO_TOOL_PAYLOAD
+        ):
+            return coerce_tool_payload(self.mujoco_tool_payload)
+        try:
+            payload = read_active_tool_payload(
+                self.robot_sn,
+                network_interface_whitelist=self.network_interface_whitelist,
+                verbose=self.verbose,
+            )
+        except Exception as exc:
+            warnings.warn(
+                "Could not read active Flexiv tool payload; MuJoCo OSC model "
+                f"will omit the payload: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return None
+        return None if payload.is_empty else payload
 
     def _last_or_raw_torque(self, raw) -> np.ndarray:
         return (
@@ -224,6 +254,12 @@ class FlexivRobotInterface:
                 )
                 state["mujoco_frame_name"] = np.asarray(
                     [self._mujoco_backend.frame_name], dtype=object
+                )
+                state["mujoco_tool_name"] = np.asarray(
+                    [self._mujoco_backend.tool_name], dtype=object
+                )
+                state["mujoco_tool_mass"] = np.asarray(
+                    [self._mujoco_backend.tool_mass], dtype=float
                 )
         return state
 
@@ -326,6 +362,7 @@ class MujocoRobotInterface:
         mujoco_realtime: bool = True,
         mujoco_timestep: float = DEFAULT_MUJOCO_TIMESTEP,
         mujoco_initial_qpos: np.ndarray | list[float] | None = None,
+        mujoco_tool_payload: Any = None,
     ) -> None:
         if robot_sn is not None and not is_mujoco_robot_sn(robot_sn):
             raise ValueError("MujocoRobotInterface robot_sn must be 'mujoco'")
@@ -360,6 +397,7 @@ class MujocoRobotInterface:
             if mujoco_initial_qpos is None
             else np.asarray(mujoco_initial_qpos, dtype=float)
         )
+        self.mujoco_tool_payload = coerce_tool_payload(mujoco_tool_payload)
 
         self._mujoco = None
         self._mujoco_backend: MujocoModelBackend | None = None
@@ -412,6 +450,7 @@ class MujocoRobotInterface:
             model_path,
             site_name=self.mujoco_site_name,
             body_name=self.mujoco_body_name,
+            tool_payload=self.mujoco_tool_payload,
         )
         self._mujoco = self._mujoco_backend._mujoco
         self._mujoco_backend.model.opt.timestep = self.mujoco_timestep
@@ -441,6 +480,8 @@ class MujocoRobotInterface:
             "simulated": True,
             "mujoco_model_path": str(self._mujoco_backend.path),
             "mujoco_timestep": self.mujoco_timestep,
+            "mujoco_tool_name": self._mujoco_backend.tool_name,
+            "mujoco_tool_mass": self._mujoco_backend.tool_mass,
         }
         self._last_torque = np.zeros(dof)
         self._last_total_torque = np.zeros(dof)
@@ -598,6 +639,8 @@ class MujocoRobotInterface:
             "mujoco_model_path": np.asarray([str(backend.path)], dtype=object),
             "mujoco_frame_type": np.asarray([backend.frame_type], dtype=object),
             "mujoco_frame_name": np.asarray([backend.frame_name], dtype=object),
+            "mujoco_tool_name": np.asarray([backend.tool_name], dtype=object),
+            "mujoco_tool_mass": np.asarray([backend.tool_mass], dtype=float),
             "mujoco_timestep": np.asarray(
                 [float(backend.model.opt.timestep)], dtype=float
             ),

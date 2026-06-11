@@ -11,6 +11,7 @@ from .mujoco_model import (
     default_mujoco_scene_path,
 )
 from .robot import DEFAULT_MUJOCO_TIMESTEP, FlexivRobotInterface, MujocoRobotInterface
+from .tools import ToolPayload
 
 try:
     __version__ = version("aioflexiv")
@@ -25,6 +26,7 @@ __all__ = [
     "FlexivRobotInterface",
     "MujocoModelBackend",
     "MujocoRobotInterface",
+    "ToolPayload",
     "default_mujoco_model_path",
     "default_mujoco_scene_path",
     "load_rt",

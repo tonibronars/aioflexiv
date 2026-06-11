@@ -14,6 +14,7 @@ from aioflexiv.__main__ import cmd_tool_calibrate, cmd_tool_list, cmd_tool_load
 from aioflexiv.config import save_last_robot_sn
 from aioflexiv.controller import FlexivController
 from aioflexiv.robot import FlexivRobotInterface
+from aioflexiv.tools import ToolPayload, read_active_tool_payload, tool_payload_from_params
 
 
 class _FakeActiveTorqueControl:
@@ -178,6 +179,56 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(fake_tool.active, "gripper")
         self.assertIn("Loaded", stdout.getvalue())
+
+    def test_tool_payload_from_rdk_params(self) -> None:
+        params = _FakeParams(
+            mass=1.2,
+            com=[0.01, 0.02, 0.03],
+            inertia=[0.1, 0.2, 0.3, 0.01, 0.02, 0.03],
+            tcp_location=[0.0, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0],
+        )
+
+        payload = tool_payload_from_params(params, name="gripper")
+
+        self.assertEqual(payload.name, "gripper")
+        self.assertEqual(payload.mass, 1.2)
+        self.assertEqual(payload.com, (0.01, 0.02, 0.03))
+        self.assertEqual(payload.inertia, (0.1, 0.2, 0.3, 0.01, 0.02, 0.03))
+        self.assertEqual(
+            payload.tcp_location,
+            (0.0, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0),
+        )
+
+    def test_read_active_tool_payload_uses_current_rdk_tool(self) -> None:
+        fake_tool = _FakeTool()
+        fake_tool.active = "gripper"
+        fake_rdk = _FakeFlexivRdk(fake_tool)
+
+        with patch.dict(sys.modules, {"flexivrdk": fake_rdk}):
+            payload = read_active_tool_payload("robot")
+
+        self.assertEqual(payload.name, "gripper")
+        self.assertEqual(payload.mass, 0.2)
+
+    def test_robot_start_passes_active_tool_payload_to_mujoco_backend(self) -> None:
+        payload = ToolPayload(
+            name="gripper",
+            mass=0.2,
+            com=(0.0, 0.0, 0.03),
+            inertia=(0.01, 0.01, 0.01, 0.0, 0.0, 0.0),
+            tcp_location=(0.0, 0.0, 0.1, 1.0, 0.0, 0.0, 0.0),
+        )
+        robot = FlexivRobotInterface("robot", model_backend="mujoco")
+
+        with (
+            patch("aioflexiv.robot.read_active_tool_payload", return_value=payload),
+            patch("aioflexiv.robot.MujocoModelBackend") as backend_cls,
+            patch("aioflexiv.robot.load_rt", return_value=_FakeRt()),
+        ):
+            robot.start()
+
+        backend_cls.assert_called_once()
+        self.assertIs(backend_cls.call_args.kwargs["tool_payload"], payload)
 
     def test_tool_list_uses_saved_serial_when_robot_sn_omitted(self) -> None:
         save_last_robot_sn("saved-robot")
