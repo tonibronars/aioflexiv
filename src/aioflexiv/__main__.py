@@ -6,8 +6,8 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Iterable, Sequence
 
+from .config import config_path, resolve_robot_sn, save_last_robot_sn
 
-DEFAULT_ROBOT_SN = "Rizon4s-063533"
 _IS_TTY = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
 
 
@@ -168,14 +168,23 @@ def _print_events(robot: Any, count: int) -> None:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    import flexivrdk
+    try:
+        robot_sn = resolve_robot_sn(args.robot_sn)
+    except Exception as exc:
+        _section("Connection")
+        _line("Status", f"{RED}failed{RST}")
+        _line("Error", exc)
+        print()
+        return 2
 
     ver = _get_version()
-    print(f"\n  {BOLD}aioflexiv{RST} {DIM}v{ver}{RST}  {DIM}|{RST}  {args.robot_sn}")
+    print(f"\n  {BOLD}aioflexiv{RST} {DIM}v{ver}{RST}  {DIM}|{RST}  {robot_sn}")
+
+    import flexivrdk
 
     try:
         robot = flexivrdk.Robot(
-            args.robot_sn, args.network_interface or [], args.verbose, False
+            robot_sn, args.network_interface or [], args.verbose, False
         )
     except Exception as exc:
         _section("Connection")
@@ -185,6 +194,13 @@ def cmd_status(args: argparse.Namespace) -> int:
         return 1
 
     info = robot.info()
+    serial = getattr(info, "serial_num", robot_sn) or robot_sn
+    try:
+        save_last_robot_sn(serial)
+    except Exception as exc:
+        _section("Config")
+        _line("Warning", f"Could not save last serial to {config_path()} ({exc})")
+
     states = _safe_call("states", robot.states, default=None)
 
     op_status = robot.operational_status()
@@ -194,7 +210,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     _section("System")
     _line("Connected", _yes_no(robot.connected()))
-    _line("Serial", getattr(info, "serial_num", args.robot_sn) or args.robot_sn)
+    _line("Serial", serial)
     _line("Model", getattr(info, "model_name", "?") or "?")
     _line("Software", getattr(info, "software_ver", "?") or "?")
     _line("License", getattr(info, "license_type", "?") or "?")
@@ -263,11 +279,21 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     status = subparsers.add_parser("status", help="Show Flexiv robot status")
-    status.add_argument("robot_sn", nargs="?", default=DEFAULT_ROBOT_SN)
+    status.add_argument(
+        "robot_sn",
+        nargs="?",
+        help=(
+            "Robot serial number. If omitted, use the latest serial saved in "
+            f"{config_path()}."
+        ),
+    )
     status.add_argument(
         "--network-interface",
         action="append",
-        help="Whitelist a local IPv4 interface for RDK discovery; may be repeated.",
+        help=(
+            "Whitelist a local IPv4 interface while searching for the specified robot; "
+            "may be repeated."
+        ),
     )
     status.add_argument("--events", type=int, default=3, help="Number of recent events to show.")
     status.add_argument("--verbose", action="store_true", help="Enable Flexiv RDK verbose output.")

@@ -6,10 +6,8 @@ import statistics
 import time
 from collections import deque
 
+from .config import config_path, resolve_robot_sn, save_last_robot_sn
 from ._loader import load_rt
-
-
-DEFAULT_ROBOT_SN = "Rizon4s-063533"
 
 
 def _timestamp_seconds(timestamp) -> float:
@@ -20,9 +18,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run Flexiv RT joint-torque mode with zero user-commanded torque."
     )
-    parser.add_argument("robot_sn", nargs="?", default=DEFAULT_ROBOT_SN)
+    parser.add_argument(
+        "robot_sn",
+        nargs="?",
+        help=(
+            "Robot serial number. If omitted, use the latest serial saved in "
+            f"{config_path()}."
+        ),
+    )
     parser.add_argument("--friction-comp-scale", type=float, default=100.0)
     args = parser.parse_args()
+    try:
+        robot_sn = resolve_robot_sn(args.robot_sn)
+    except Exception as exc:
+        parser.error(str(exc))
 
     rt = load_rt()
     ctrl = None
@@ -31,14 +40,15 @@ def main() -> int:
     wall_dts = deque(maxlen=5000)
     robot_dts = deque(maxlen=5000)
 
-    print(f"Connecting to {args.robot_sn}")
+    print(f"Connecting to {robot_sn}")
     print("Switching to RT_JOINT_TORQUE in 3 seconds. Keep clear of the robot.")
     print("After it starts, press Ctrl+C to stop.")
     time.sleep(3.0)
 
     wall_start = time.perf_counter()
     try:
-        ctrl = rt.ActiveTorqueControl(args.robot_sn, [], False)
+        ctrl = rt.ActiveTorqueControl(robot_sn, [], False)
+        save_last_robot_sn(robot_sn)
         initial = ctrl.states()
         q0 = list(initial.q)
         zero_torque = [0.0] * len(q0)

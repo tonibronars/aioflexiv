@@ -10,12 +10,12 @@ from aioflexiv import FlexivController
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("robot_sn", nargs="?", default="Rizon4s-063533")
+    parser.add_argument("robot_sn", nargs="?")
     parser.add_argument("--joint", type=int, default=0)
     parser.add_argument("--delta", type=float, default=0.05)
     args = parser.parse_args()
 
-    controller = FlexivController(args.robot_sn, False)
+    controller = FlexivController(args.robot_sn, ext_offset=False)
     await controller.start()
     try:
         if not 0 <= args.joint < controller.dof:

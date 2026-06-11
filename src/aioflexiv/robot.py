@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from typing import Any
+import warnings
 
 import numpy as np
 
 from ._loader import load_rt
+from .config import resolve_robot_sn, save_last_robot_sn
 
 
 class FlexivRobotInterface:
@@ -17,7 +19,7 @@ class FlexivRobotInterface:
 
     def __init__(
         self,
-        robot_sn: str,
+        robot_sn: str | None = None,
         *,
         link_name: str = "flange",
         enable_gravity_comp: bool = True,
@@ -29,7 +31,7 @@ class FlexivRobotInterface:
         fault_clear_timeout_sec: int = 30,
         operational_timeout_sec: int = 30,
     ) -> None:
-        self.robot_sn = robot_sn
+        self.robot_sn = resolve_robot_sn(robot_sn)
         self.link_name = link_name
         self.enable_gravity_comp = enable_gravity_comp
         self.enable_soft_limits = enable_soft_limits
@@ -86,6 +88,14 @@ class FlexivRobotInterface:
             self.operational_timeout_sec,
         )
         self._info = dict(self._ctrl.info())
+        try:
+            save_last_robot_sn(self.robot_sn)
+        except Exception as exc:
+            warnings.warn(
+                f"Could not save last robot serial to aioflexiv config: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         self._last_torque = np.zeros(self.dof)
 
     def stop(self) -> None:

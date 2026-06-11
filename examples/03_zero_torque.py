@@ -12,10 +12,10 @@ from aioflexiv import FlexivController
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("robot_sn", nargs="?", default="Rizon4s-063533")
+    parser.add_argument("robot_sn", nargs="?")
     args = parser.parse_args()
 
-    controller = FlexivController(args.robot_sn, friction_comp_scale = 99)
+    controller = FlexivController(args.robot_sn, friction_comp_scale=99)
     await controller.start()
     try:
         base = np.ones(controller.dof)

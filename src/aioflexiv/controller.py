@@ -51,7 +51,7 @@ class FlexivController:
 
     def __init__(
         self,
-        robot: str | FlexivRobotInterface,
+        robot: str | FlexivRobotInterface | None = None,
         *,
         link_name: str = "flange",
         enable_gravity_comp: bool = True,

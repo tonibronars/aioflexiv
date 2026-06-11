@@ -56,13 +56,17 @@ Run the torque loop in-process with asyncio:
 - **Async discipline**: avoid blocking calls after `controller.start()` because
   the background torque loop must keep stepping
 
+Pass the serial explicitly on first use. After a successful connection,
+aioflexiv stores it in `~/.config/aioflexiv/config.json`; later scripts can use
+`FlexivController()` or `FlexivController(None)` to reuse the latest serial.
+
 ```python
 import asyncio
 import numpy as np
 from aioflexiv import FlexivController
 
 async def main():
-    controller = FlexivController("Rizon4s-063533")
+    controller = FlexivController("<ROBOT_SN>")
 
     await controller.start()
     try:
@@ -99,14 +103,22 @@ Show Flexiv robot connection, system, state, tool, device, and recent event
 information.
 
 ```bash
-aioflexiv status Rizon4s-063533
+aioflexiv status <ROBOT_SN>
 ```
 
-Use `--network-interface` to whitelist one or more local IPv4 interfaces for RDK
-discovery:
+After a successful connection, aioflexiv stores the latest serial number in
+`~/.config/aioflexiv/config.json`. Later CLI runs can omit `ROBOT_SN` and reuse
+that saved serial:
 
 ```bash
-aioflexiv status Rizon4s-063533 --network-interface 192.168.2.10
+aioflexiv status
+```
+
+Use `--network-interface` to whitelist one or more local IPv4 interfaces while
+searching for the specified robot:
+
+```bash
+aioflexiv status <ROBOT_SN> --network-interface 192.168.2.10
 ```
 
 ## Core Concepts
@@ -209,8 +221,8 @@ await controller.move([0.0, -0.7, 0.0, 1.57, 0.0, 0.7, 0.0])
 ## Examples
 
 ```bash
-python examples/01_joint_impedance.py Rizon4s-063533
-python examples/02_osc_hold.py Rizon4s-063533
+python examples/01_joint_impedance.py <ROBOT_SN>
+python examples/02_osc_hold.py <ROBOT_SN>
 ```
 
 ## License
