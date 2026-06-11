@@ -46,6 +46,8 @@ pip install -e .
 
 The install pulls `flexivrdk==1.9.1`, `mujoco`, `numpy`, and `ruckig`, builds the
 `pybind11` RT shim from source, and installs the `aioflexiv` console command.
+PyPI releases are source distributions, so installation requires a local C++17
+compiler.
 
 ## Quick Start
 
