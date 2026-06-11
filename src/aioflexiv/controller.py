@@ -54,6 +54,7 @@ class FlexivController:
         robot: str | FlexivRobotInterface | None = None,
         *,
         link_name: str = "flange",
+        tool: str | None = None,
         enable_gravity_comp: bool = True,
         enable_soft_limits: bool = True,
         friction_comp_scale: float = 100.0,
@@ -66,10 +67,13 @@ class FlexivController:
     ) -> None:
         if isinstance(robot, FlexivRobotInterface):
             self.robot = robot
+            if tool is not None:
+                self.robot.tool = tool
         else:
             self.robot = FlexivRobotInterface(
                 robot,
                 link_name=link_name,
+                tool=tool,
                 enable_gravity_comp=enable_gravity_comp,
                 enable_soft_limits=enable_soft_limits,
                 friction_comp_scale=friction_comp_scale,

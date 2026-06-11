@@ -7,6 +7,7 @@ import numpy as np
 
 from ._loader import load_rt
 from .config import resolve_robot_sn, save_last_robot_sn
+from .tools import switch_active_tool
 
 
 class FlexivRobotInterface:
@@ -22,6 +23,7 @@ class FlexivRobotInterface:
         robot_sn: str | None = None,
         *,
         link_name: str = "flange",
+        tool: str | None = None,
         enable_gravity_comp: bool = True,
         enable_soft_limits: bool = True,
         friction_comp_scale: float = 100.0,
@@ -33,6 +35,7 @@ class FlexivRobotInterface:
     ) -> None:
         self.robot_sn = resolve_robot_sn(robot_sn)
         self.link_name = link_name
+        self.tool = tool
         self.enable_gravity_comp = enable_gravity_comp
         self.enable_soft_limits = enable_soft_limits
         self.friction_comp_scale = friction_comp_scale
@@ -78,6 +81,13 @@ class FlexivRobotInterface:
     def start(self) -> None:
         if self._ctrl is not None:
             return
+        if self.tool:
+            switch_active_tool(
+                self.robot_sn,
+                self.tool,
+                network_interface_whitelist=self.network_interface_whitelist,
+                verbose=self.verbose,
+            )
         self._rt = load_rt()
         self._ctrl = self._rt.ActiveTorqueControl(
             self.robot_sn,

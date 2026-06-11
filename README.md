@@ -59,6 +59,8 @@ Run the torque loop in-process with asyncio:
 Pass the serial explicitly on first use. After a successful connection,
 aioflexiv stores it in `~/.config/aioflexiv/config.json`; later scripts can use
 `FlexivController()` or `FlexivController(None)` to reuse the latest serial.
+Pass `tool="<TOOL_NAME>"` to switch the robot's active Flexiv tool before the
+real-time torque loop starts.
 
 ```python
 import asyncio
@@ -66,7 +68,7 @@ import numpy as np
 from aioflexiv import FlexivController
 
 async def main():
-    controller = FlexivController("<ROBOT_SN>")
+    controller = FlexivController("<ROBOT_SN>", tool="MyGripper")
 
     await controller.start()
     try:
@@ -91,10 +93,12 @@ if __name__ == "__main__":
 
 ## CLI Reference
 
-The CLI currently focuses on status inspection.
-
 ```text
 aioflexiv status [ROBOT_SN] [--network-interface IP] [--events N] [--verbose]
+aioflexiv tool status [ROBOT_SN] [--json]
+aioflexiv tool list [ROBOT_SN] [--json]
+aioflexiv tool load TOOL [ROBOT_SN]
+aioflexiv tool calibrate TOOL [ROBOT_SN] [--tcp-location X Y Z QW QX QY QZ] [--load]
 ```
 
 ### `status`
@@ -119,6 +123,48 @@ searching for the specified robot:
 
 ```bash
 aioflexiv status <ROBOT_SN> --network-interface 192.168.2.10
+```
+
+### `tool`
+
+Manage Flexiv tool payloads through the official `flexivrdk.Tool` API. Tool
+changes and payload calibration require the robot to be in `IDLE`, so stop any
+running torque controller first.
+
+Show the active tool:
+
+```bash
+aioflexiv tool status <ROBOT_SN>
+```
+
+List saved tools and their payload parameters:
+
+```bash
+aioflexiv tool list <ROBOT_SN>
+```
+
+Load a saved tool on the robot. Future torque loops use the robot's active tool
+for Flexiv-side gravity compensation:
+
+```bash
+aioflexiv tool load MyGripper <ROBOT_SN>
+```
+
+Interactively calibrate payload mass, center of mass, and inertia, then save the
+result as a Flexiv tool:
+
+```bash
+aioflexiv tool calibrate MyGripper <ROBOT_SN>
+```
+
+Flexiv's calibration result does not contain a valid TCP pose. For an existing
+tool, aioflexiv preserves the current TCP. For a new tool, it defaults to the
+flange TCP unless you provide one:
+
+```bash
+aioflexiv tool calibrate MyGripper <ROBOT_SN> \
+  --tcp-location 0.0 0.0 0.12 1.0 0.0 0.0 0.0 \
+  --load
 ```
 
 ## Core Concepts
