@@ -28,6 +28,15 @@ This package contains a MuJoCo robot description (MJCF) of [Rizon4S](https://www
 6. Added `scene.xml` which includes the robot, with a textured groundplane,
    skybox, and haze.
 
+## Flange frames
+
+The distal link exposes two coincident sites with different axis conventions:
+
+- `attachment_site` matches the flange pose reported by Flexiv RDK
+  `RobotStates::flange_pose` and is the frame used by aioflexiv's MuJoCo model
+  backend.
+- `tool_mount_site` is rotated 180 degrees about the flange z-axis and is the
+  physical mounting convention for composing tool geometry.
 
 ## License
 

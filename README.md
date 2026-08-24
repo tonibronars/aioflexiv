@@ -241,10 +241,12 @@ await controller.set("q_desired", target_qpos)
 
 End-effector pose control. By default the library computes end-effector pose,
 Jacobian, mass matrix, Coriolis, and gravity terms from the bundled MuJoCo
-Flexiv model, tracking the `attachment_site` MuJoCo site. On hardware, the active
-Flexiv tool payload is loaded into a temporary MuJoCo model before compilation,
-so OSC uses the same attached mass properties that Flexiv uses for tool gravity
-compensation:
+Flexiv model, tracking the `attachment_site` MuJoCo site. For Rizon 4S this site
+is calibrated to the pose returned by Flexiv RDK; the coincident
+`tool_mount_site` uses the physical tool-mount convention, rotated 180 degrees
+about flange z. On hardware, the active Flexiv tool payload is loaded into a
+temporary MuJoCo model before compilation, so OSC uses the same attached mass
+properties that Flexiv uses for tool gravity compensation:
 
 ```python
 controller = FlexivController("<ROBOT_SN>")
