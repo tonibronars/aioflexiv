@@ -10,7 +10,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from aioflexiv.__main__ import cmd_tool_calibrate, cmd_tool_list, cmd_tool_load
+from aioflexiv.__main__ import (
+    build_parser,
+    cmd_tool_calibrate,
+    cmd_tool_list,
+    cmd_tool_load,
+    cmd_tool_update,
+)
 from aioflexiv.config import save_last_robot_sn
 from aioflexiv.controller import FlexivController
 from aioflexiv.robot import FlexivRobotInterface
@@ -179,6 +185,90 @@ class ToolTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(fake_tool.active, "gripper")
         self.assertIn("Loaded", stdout.getvalue())
+
+    def test_tool_update_changes_only_inertia(self) -> None:
+        fake_tool = _FakeTool()
+        fake_tool.active = "gripper"
+        original = fake_tool.saved["gripper"]
+        original.CoM = [0.01, 0.02, 0.03]
+        inertia = [0.001536, 0.002346, 0.001255, 0.0, 0.0, 0.0]
+        fake_rdk = _FakeFlexivRdk(fake_tool)
+        args = SimpleNamespace(
+            name="gripper",
+            robot_sn="robot",
+            network_interface=None,
+            verbose=False,
+            inertia=inertia,
+            yes=True,
+        )
+
+        with patch.dict(sys.modules, {"flexivrdk": fake_rdk}):
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                status = cmd_tool_update(args)
+
+        self.assertEqual(status, 0)
+        self.assertIsNotNone(fake_tool.updated)
+        name, params = fake_tool.updated
+        self.assertEqual(name, "gripper")
+        self.assertEqual(params.inertia, inertia)
+        self.assertEqual(params.mass, 0.2)
+        self.assertEqual(params.CoM, [0.01, 0.02, 0.03])
+        self.assertEqual(
+            params.tcp_location,
+            [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
+        )
+        self.assertEqual(fake_tool.active, "gripper")
+        self.assertIn("Mass, CoM, and TCP will be preserved", stdout.getvalue())
+
+    def test_tool_update_rejects_nonphysical_inertia_before_connecting(self) -> None:
+        fake_tool = _FakeTool()
+        fake_rdk = _FakeFlexivRdk(fake_tool)
+        args = SimpleNamespace(
+            name="gripper",
+            robot_sn="robot",
+            network_interface=None,
+            verbose=False,
+            inertia=[1.0, 1.0, 3.0, 0.0, 0.0, 0.0],
+            yes=True,
+        )
+
+        with patch.dict(sys.modules, {"flexivrdk": fake_rdk}):
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                status = cmd_tool_update(args)
+
+        self.assertEqual(status, 1)
+        self.assertIsNone(fake_tool.updated)
+        self.assertIn("triangle inequality", stdout.getvalue())
+
+    def test_tool_update_parser_accepts_inertia(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "tool",
+                "update",
+                "gripper",
+                "robot",
+                "--network-interface",
+                "192.168.2.10",
+                "--inertia",
+                "0.001536",
+                "0.002346",
+                "0.001255",
+                "0",
+                "0",
+                "0",
+            ]
+        )
+
+        self.assertIs(args.func, cmd_tool_update)
+        self.assertEqual(args.name, "gripper")
+        self.assertEqual(args.robot_sn, "robot")
+        self.assertEqual(args.network_interface, ["192.168.2.10"])
+        self.assertEqual(
+            args.inertia,
+            [0.001536, 0.002346, 0.001255, 0.0, 0.0, 0.0],
+        )
 
     def test_tool_payload_from_rdk_params(self) -> None:
         params = _FakeParams(

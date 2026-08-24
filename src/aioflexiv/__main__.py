@@ -7,6 +7,8 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Iterable, Sequence
 
+import numpy as np
+
 from .config import config_path, resolve_robot_sn, save_last_robot_sn
 from .tools import FLANGE_TCP_LOCATION, call_any_method, switch_robot_to_idle
 
@@ -367,6 +369,97 @@ def _set_tcp_location(params: Any, tcp_location: Sequence[float]) -> None:
         current[idx] = value
 
 
+def _validated_inertia(inertia: Sequence[float]) -> list[float]:
+    """Return a physically valid inertia vector in Flexiv RDK ordering."""
+    values = [float(value) for value in inertia]
+    if len(values) != 6:
+        raise ValueError("inertia must contain IXX IYY IZZ IXY IXZ IYZ")
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("inertia values must be finite")
+
+    ixx, iyy, izz, ixy, ixz, iyz = values
+    matrix = np.array(
+        [
+            [ixx, ixy, ixz],
+            [ixy, iyy, iyz],
+            [ixz, iyz, izz],
+        ],
+        dtype=float,
+    )
+    principal = np.linalg.eigvalsh(matrix)
+    scale = max(float(np.max(np.abs(principal))), 1.0e-12)
+    tolerance = 1.0e-9 * scale
+    if float(principal[0]) <= tolerance:
+        raise ValueError("inertia tensor must be positive definite")
+    if float(principal[2]) > float(principal[0] + principal[1]) + tolerance:
+        raise ValueError(
+            "inertia tensor violates the principal-moment triangle inequality"
+        )
+    return values
+
+
+def _set_inertia(params: Any, inertia: Sequence[float]) -> None:
+    values = [float(value) for value in inertia]
+    try:
+        params.inertia = values
+        return
+    except (AttributeError, TypeError):
+        pass
+
+    current = params.inertia
+    for idx, value in enumerate(values):
+        current[idx] = value
+
+
+def cmd_tool_update(args: argparse.Namespace) -> int:
+    if args.name.strip().lower() == "flange":
+        return _print_tool_command_error(
+            RuntimeError("Cannot update the reserved Flange tool")
+        )
+
+    try:
+        inertia = _validated_inertia(args.inertia)
+        flexivrdk, robot, serial = _connect_robot_for_command(args)
+        tool = flexivrdk.Tool(robot)
+        if not _tool_exists(tool, args.name):
+            raise RuntimeError(f"Tool {args.name!r} does not exist")
+        active = str(tool.name())
+        params = tool.params(args.name)
+        previous_inertia = [float(value) for value in params.inertia]
+    except Exception as exc:
+        return _print_tool_command_error(exc, status=_tool_error_status(exc))
+
+    _section("Tool Update")
+    _line("Robot", serial)
+    _line("Tool", args.name)
+    _line("Active", "yes" if active == args.name else "no")
+    _line("Before inertia", _vec(previous_inertia, precision=7))
+    _line("After inertia", _vec(inertia, precision=7))
+    print()
+    print("  Mass, CoM, and TCP will be preserved.")
+
+    if not _confirm("Update the saved tool inertia?", assume_yes=args.yes):
+        _line("Status", "cancelled")
+        print()
+        return 130
+
+    try:
+        switch_robot_to_idle(robot, flexivrdk)
+        _set_inertia(params, inertia)
+        _update_tool(tool, args.name, params)
+        updated = tool.params(args.name)
+    except Exception as exc:
+        return _print_tool_command_error(exc)
+
+    _section("Tool")
+    _line("Robot", serial)
+    _line("Updated", args.name)
+    _line("Active", "yes" if str(tool.name()) == args.name else "no")
+    _print_tool_params(updated)
+    print()
+    return 0
+
+
 def cmd_tool_calibrate(args: argparse.Namespace) -> int:
     if args.name.strip().lower() == "flange":
         return _print_tool_command_error(
@@ -620,6 +713,29 @@ def build_parser() -> argparse.ArgumentParser:
     add_robot_arg(tool_load)
     add_connection_options(tool_load)
     tool_load.set_defaults(func=cmd_tool_load)
+
+    tool_update = tool_subparsers.add_parser(
+        "update",
+        help="Update selected parameters of an existing Flexiv tool",
+    )
+    tool_update.add_argument("name", help="Name of the saved Flexiv tool to update.")
+    add_robot_arg(tool_update)
+    add_connection_options(tool_update)
+    tool_update.add_argument(
+        "--inertia",
+        type=float,
+        nargs=6,
+        required=True,
+        metavar=("IXX", "IYY", "IZZ", "IXY", "IXZ", "IYZ"),
+        help="Inertia tensor at the CoM in Flexiv RDK ordering, in kg*m^2.",
+    )
+    tool_update.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Apply the update without an interactive confirmation prompt.",
+    )
+    tool_update.set_defaults(func=cmd_tool_update)
 
     tool_calibrate = tool_subparsers.add_parser(
         "calibrate",

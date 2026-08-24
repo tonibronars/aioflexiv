@@ -108,6 +108,7 @@ aioflexiv status [ROBOT_SN] [--network-interface IP] [--events N] [--verbose]
 aioflexiv tool status [ROBOT_SN] [--json]
 aioflexiv tool list [ROBOT_SN] [--json]
 aioflexiv tool load TOOL [ROBOT_SN]
+aioflexiv tool update TOOL [ROBOT_SN] --inertia IXX IYY IZZ IXY IXZ IYZ
 aioflexiv tool calibrate TOOL [ROBOT_SN] [--tcp-location X Y Z QW QX QY QZ] [--load]
 ```
 
@@ -160,6 +161,19 @@ active tool payload at startup:
 ```bash
 aioflexiv tool load MyGripper <ROBOT_SN>
 ```
+
+Update only the inertia tensor of an existing tool while preserving its mass,
+center of mass, and TCP. Values use Flexiv RDK ordering
+`IXX IYY IZZ IXY IXZ IYZ` and units of `kg*m^2`:
+
+```bash
+aioflexiv tool update MyGripper <ROBOT_SN> \
+  --inertia 0.001536 0.002346 0.001255 0.0 0.0 0.0
+```
+
+The command shows the current and proposed tensors and asks for confirmation
+before applying the update. The robot must be in `IDLE`. Use `--yes` for an
+explicitly non-interactive update.
 
 Interactively calibrate payload mass, center of mass, and inertia, then save the
 result as a Flexiv tool:
