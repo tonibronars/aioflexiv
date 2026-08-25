@@ -45,6 +45,34 @@ class MujocoModelBackendTests(unittest.TestCase):
                 mass_eigs = np.linalg.eigvalsh(0.5 * (state["mm"] + state["mm"].T))
                 self.assertGreater(float(mass_eigs[0]), 0.0)
 
+    def test_rizon4s_rdk_flange_and_physical_tool_mount_frames(self) -> None:
+        import mujoco
+
+        backend = MujocoModelBackend(default_mujoco_model_path("Rizon4S"))
+        model = backend.model
+        data = backend.data
+        mujoco.mj_forward(model, data)
+
+        flange_id = model.site("attachment_site").id
+        tool_mount_id = model.site("tool_mount_site").id
+        expected_position = np.array([0.0, 0.0, 0.124])
+        np.testing.assert_allclose(
+            model.site_pos[flange_id], expected_position, atol=1.0e-10
+        )
+        np.testing.assert_allclose(
+            model.site_pos[tool_mount_id], expected_position, atol=1.0e-10
+        )
+
+        flange_rotation = np.asarray(data.site_xmat[flange_id]).reshape(3, 3)
+        tool_mount_rotation = np.asarray(data.site_xmat[tool_mount_id]).reshape(
+            3, 3
+        )
+        np.testing.assert_allclose(
+            flange_rotation.T @ tool_mount_rotation,
+            np.diag([-1.0, -1.0, 1.0]),
+            atol=2.0e-9,
+        )
+
     def test_tool_payload_is_compiled_into_model_dynamics(self) -> None:
         payload = ToolPayload(
             name="gripper",
