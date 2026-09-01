@@ -88,6 +88,8 @@ class FlexivRobotInterface:
         self._last_torque: np.ndarray | None = None
         self._mujoco_backend: MujocoModelBackend | None = None
         self._active_tool_payload = None
+        self._idle_mode_value: int | None = None
+        self._torque_mode_started = False
 
     @property
     def started(self) -> bool:
@@ -117,7 +119,7 @@ class FlexivRobotInterface:
             "refusing to use guessed fallback limits."
         )
 
-    def start(self) -> None:
+    def start(self, *, defer_torque_mode: bool = False) -> None:
         if self._ctrl is not None:
             return
         if self.tool:
@@ -136,8 +138,18 @@ class FlexivRobotInterface:
             self.auto_clear_fault,
             self.fault_clear_timeout_sec,
             self.operational_timeout_sec,
+            bool(defer_torque_mode),
         )
         self._info = dict(self._ctrl.info())
+        self._torque_mode_started = not defer_torque_mode
+        if defer_torque_mode:
+            probe = dict(self._rt.compile_time_rt_probe())
+            self._idle_mode_value = int(probe["idle_mode_value"])
+            if not self.in_idle_mode:
+                self.stop()
+                raise RuntimeError(
+                    "Robot left IDLE before external-torque offset capture"
+                )
         self._initialize_model_backend()
         try:
             save_last_robot_sn(self.robot_sn)
@@ -149,11 +161,27 @@ class FlexivRobotInterface:
             )
         self._last_torque = np.zeros(self.dof)
 
+    @property
+    def in_idle_mode(self) -> bool:
+        ctrl = self._require_started()
+        if self._idle_mode_value is None:
+            raise RuntimeError("Flexiv RDK IDLE mode value is unavailable")
+        return int(ctrl.mode_value()) == self._idle_mode_value
+
+    def start_torque_control(self) -> None:
+        ctrl = self._require_started()
+        if self._torque_mode_started:
+            return
+        ctrl.start_torque_control()
+        self._torque_mode_started = True
+
     def stop(self) -> None:
         if self._ctrl is not None:
             self._ctrl.stop()
             self._ctrl = None
             self._mujoco_backend = None
+            self._idle_mode_value = None
+            self._torque_mode_started = False
 
     def _require_started(self):
         if self._ctrl is None:

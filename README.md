@@ -208,9 +208,17 @@ No torque-rate limit is guessed by default. Set
 `controller.torque_diff_limit = <Nm/s>` if you want an additional user-space
 slew limit.
 
-By default, `FlexivController(ext_offset=True)` records the initial `tau_ext`
-when the torque loop starts and sends `commanded_torque - initial_tau_ext` to the
-robot. Pass `ext_offset=False` to disable this compensation.
+By default, `FlexivController(ext_offset=True)` keeps the real robot in IDLE,
+averages fresh `tau_ext` samples for 0.5 seconds, and then enters
+`RT_JOINT_TORQUE`. The frozen IDLE mean is applied beginning with the first
+torque command as `commanded_torque - idle_tau_ext_mean`. After the mode switch,
+the controller reads the current joint position and uses it as `q_desired`.
+This avoids estimating the offset from the torque-mode transition transient.
+
+Set `ext_offset_idle_average_s` to change the averaging window, or pass
+`ext_offset=False` to disable the compensation. aioflexiv does not automatically
+re-estimate the offset after entering torque mode; stop and restart the
+controller to capture a new IDLE mean.
 
 ### Rate Limiting
 

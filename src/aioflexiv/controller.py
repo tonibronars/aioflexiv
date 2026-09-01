@@ -91,6 +91,7 @@ class FlexivController:
         enable_soft_limits: bool = True,
         friction_comp_scale: float = 100.0,
         ext_offset: bool = True,
+        ext_offset_idle_average_s: float = 0.5,
         clip: bool = True,
         torque_diff_limit: float | None = None,
         auto_clear_fault: bool = True,
@@ -159,6 +160,14 @@ class FlexivController:
         self.state_lock = threading.Lock()
         self.type = "impedance"
         self.ext_offset = bool(ext_offset)
+        self.ext_offset_idle_average_s = float(ext_offset_idle_average_s)
+        if (
+            not np.isfinite(self.ext_offset_idle_average_s)
+            or self.ext_offset_idle_average_s < 0.0
+        ):
+            raise ValueError(
+                "ext_offset_idle_average_s must be finite and non-negative"
+            )
         self.running = False
         self.task: asyncio.Task | None = None
         self.state: dict[str, np.ndarray] | None = None
@@ -187,6 +196,8 @@ class FlexivController:
         self._last_loop_time: float | None = None
         self._last_commanded_torque: np.ndarray | None = None
         self.tau_ext_offset: np.ndarray | None = None
+        self.tau_ext_offset_sample_count = 0
+        self.tau_ext_offset_capture_duration_s = 0.0
 
     @property
     def dof(self) -> int:
@@ -218,18 +229,74 @@ class FlexivController:
         tau_ext = _as_vector(self.state["tau_ext"], self.dof, "tau_ext")
         with self.state_lock:
             self.tau_ext_offset = tau_ext.copy()
+            self.tau_ext_offset_sample_count = 1
+            self.tau_ext_offset_capture_duration_s = 0.0
+
+    def _capture_idle_tau_ext_offset(self) -> None:
+        """Average fresh external-torque estimates while the real robot is IDLE."""
+        if not isinstance(self.robot, FlexivRobotInterface):
+            raise RuntimeError("IDLE external-torque capture requires a real robot")
+        if not self.robot.in_idle_mode:
+            raise RuntimeError("Robot must remain in IDLE during offset capture")
+
+        started_at = time.perf_counter()
+        deadline = started_at + self.ext_offset_idle_average_s
+        mean = np.zeros(self.dof)
+        sample_count = 0
+
+        while True:
+            state = self.robot.state_minimal()
+            tau_ext = _as_vector(state["tau_ext"], self.dof, "tau_ext")
+            if not np.all(np.isfinite(tau_ext)):
+                raise RuntimeError("Non-finite tau_ext sample during IDLE capture")
+            sample_count += 1
+            mean += (tau_ext - mean) / sample_count
+            if time.perf_counter() >= deadline:
+                break
+
+        if not self.robot.in_idle_mode:
+            raise RuntimeError("Robot left IDLE during offset capture")
+        with self.state_lock:
+            self.tau_ext_offset = mean
+            self.tau_ext_offset_sample_count = sample_count
+            self.tau_ext_offset_capture_duration_s = time.perf_counter() - started_at
 
     async def start(self) -> asyncio.Task:
-        self.robot.start()
-        self._sync_shapes()
-        self.initialize()
-        self._capture_tau_ext_offset()
-        self.running = True
-        self._last_loop_time = time.perf_counter()
-        if self.task is None or self.task.done():
-            self.task = asyncio.create_task(self._run())
-        await asyncio.sleep(0.1)
-        return self.task
+        deferred_real_start = self.ext_offset and isinstance(
+            self.robot, FlexivRobotInterface
+        )
+        try:
+            if deferred_real_start:
+                self.robot.start(defer_torque_mode=True)
+            else:
+                self.robot.start()
+            self._sync_shapes()
+            with self.state_lock:
+                self.tau_ext_offset = np.zeros(self.dof)
+                self.tau_ext_offset_sample_count = 0
+                self.tau_ext_offset_capture_duration_s = 0.0
+
+            if deferred_real_start:
+                self._capture_idle_tau_ext_offset()
+                self.robot.start_torque_control()
+
+            # Initialize only after entering torque mode so q_desired is the
+            # measured post-switch position, while the torque offset remains
+            # the frozen pre-switch IDLE mean.
+            self.initialize()
+            if self.ext_offset and not deferred_real_start:
+                self._capture_tau_ext_offset()
+
+            self.running = True
+            self._last_loop_time = time.perf_counter()
+            if self.task is None or self.task.done():
+                self.task = asyncio.create_task(self._run())
+            await asyncio.sleep(0.1)
+            return self.task
+        except BaseException:
+            self.running = False
+            self.robot.stop()
+            raise
 
     async def stop(self) -> None:
         self.running = False

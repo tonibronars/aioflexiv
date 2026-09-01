@@ -19,6 +19,7 @@ class _FakeActiveTorqueControl:
     def __init__(self, *args, **kwargs) -> None:
         self.args = args
         self.kwargs = kwargs
+        self.torque_mode_started = not bool(args[-1])
 
     def info(self) -> dict:
         return {
@@ -27,9 +28,22 @@ class _FakeActiveTorqueControl:
             "model_name": "Rizon4",
         }
 
+    def mode_value(self) -> int:
+        return 1 if self.torque_mode_started else 0
+
+    def start_torque_control(self) -> None:
+        self.torque_mode_started = True
+
+    def stop(self) -> None:
+        self.torque_mode_started = False
+
 
 class _FakeRt:
     ActiveTorqueControl = _FakeActiveTorqueControl
+
+    @staticmethod
+    def compile_time_rt_probe() -> dict:
+        return {"idle_mode_value": 0}
 
 
 class ConfigTests(unittest.TestCase):
@@ -81,6 +95,22 @@ class ConfigTests(unittest.TestCase):
                     os.environ.pop("AIOFLEXIV_CONFIG", None)
                 else:
                     os.environ["AIOFLEXIV_CONFIG"] = old_config
+
+    def test_robot_interface_can_defer_torque_mode_until_after_idle_reads(self) -> None:
+        robot = FlexivRobotInterface("explicit-robot", model_backend="rdk")
+        with patch("aioflexiv.robot.load_rt", return_value=_FakeRt()):
+            robot.start(defer_torque_mode=True)
+
+        try:
+            self.assertTrue(robot.in_idle_mode)
+            self.assertTrue(robot._ctrl.args[-1])
+
+            robot.start_torque_control()
+
+            self.assertFalse(robot.in_idle_mode)
+            self.assertTrue(robot._ctrl.torque_mode_started)
+        finally:
+            robot.stop()
 
     def test_resolve_robot_sn_errors_without_argument_or_saved_serial(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -117,14 +117,26 @@ public:
     ActiveTorqueControl(const std::string& robot_sn,
         const std::vector<std::string>& network_interface_whitelist = {}, bool verbose = true,
         bool auto_clear_fault = true, unsigned int fault_clear_timeout_sec = 30,
-        int operational_timeout_sec = 30)
+        int operational_timeout_sec = 30, bool defer_torque_mode = false)
         : robot_(robot_sn, network_interface_whitelist, verbose)
         , model_(robot_)
     {
         EnsureOperational(
             robot_, operational_timeout_sec, auto_clear_fault, fault_clear_timeout_sec);
+        if (!defer_torque_mode) {
+            start_torque_control();
+        }
+        last_timestamp_ = robot_.states().timestamp;
+    }
+
+    void start_torque_control()
+    {
+        if (torque_mode_started_) {
+            return;
+        }
         robot_.SwitchMode(rdk::Mode::RT_JOINT_TORQUE);
         last_timestamp_ = robot_.states().timestamp;
+        torque_mode_started_ = true;
     }
 
     rdk::RobotStates read_once(int timeout_ms = 1000)
@@ -146,12 +158,20 @@ public:
     void write_once(const std::vector<double>& torques, bool enable_gravity_comp = true,
         bool enable_soft_limits = true, double friction_comp_scale = 100.0)
     {
+        if (!torque_mode_started_) {
+            throw std::logic_error("Call start_torque_control() before write_once()");
+        }
         robot_.StreamJointTorque(
             torques, enable_gravity_comp, enable_soft_limits, friction_comp_scale);
     }
 
     rdk::RobotStates states() const { return robot_.states(); }
-    void stop() { robot_.Stop(); }
+    int mode_value() const { return static_cast<int>(robot_.mode()); }
+    void stop()
+    {
+        robot_.Stop();
+        torque_mode_started_ = false;
+    }
 
     py::dict info() const
     {
@@ -209,6 +229,7 @@ private:
     rdk::Robot robot_;
     rdk::Model model_;
     std::pair<int, int> last_timestamp_ {};
+    bool torque_mode_started_ = false;
 };
 
 py::dict compile_time_rt_probe()
@@ -223,6 +244,7 @@ py::dict compile_time_rt_probe()
     auto model_jacobian = &rdk::Model::J;
 
     py::dict result;
+    result["idle_mode_value"] = static_cast<int>(rdk::Mode::IDLE);
     result["rt_joint_torque_mode_value"] = static_cast<int>(rdk::Mode::RT_JOINT_TORQUE);
     result["has_switch_mode_symbol"] = switch_mode != nullptr;
     result["has_states_symbol"] = states != nullptr;
@@ -261,16 +283,20 @@ PYBIND11_MODULE(_aioflexiv_rt, m)
 
     py::class_<ActiveTorqueControl>(m, "ActiveTorqueControl")
         .def(py::init<const std::string&, const std::vector<std::string>&, bool, bool,
-                 unsigned int, int>(),
+                 unsigned int, int, bool>(),
             py::arg("robot_sn"), py::arg("network_interface_whitelist") = std::vector<std::string> {},
             py::arg("verbose") = true, py::arg("auto_clear_fault") = true,
-            py::arg("fault_clear_timeout_sec") = 30, py::arg("operational_timeout_sec") = 30)
+            py::arg("fault_clear_timeout_sec") = 30, py::arg("operational_timeout_sec") = 30,
+            py::arg("defer_torque_mode") = false)
+        .def("start_torque_control", &ActiveTorqueControl::start_torque_control,
+            py::call_guard<py::gil_scoped_release>())
         .def("read_once", &ActiveTorqueControl::read_once, py::arg("timeout_ms") = 1000,
             py::call_guard<py::gil_scoped_release>())
         .def("write_once", &ActiveTorqueControl::write_once, py::arg("torques"),
             py::arg("enable_gravity_comp") = true, py::arg("enable_soft_limits") = true,
             py::arg("friction_comp_scale") = 100.0, py::call_guard<py::gil_scoped_release>())
         .def("states", &ActiveTorqueControl::states)
+        .def("mode_value", &ActiveTorqueControl::mode_value)
         .def("info", &ActiveTorqueControl::info)
         .def("read_once_full", &ActiveTorqueControl::read_once_full, py::arg("link_name") = "flange",
             py::arg("timeout_ms") = 1000)
