@@ -22,6 +22,40 @@ MUJOCO_ROBOT_SN = "mujoco"
 DEFAULT_MUJOCO_TIMESTEP = 0.001
 AUTO_MUJOCO_TOOL_PAYLOAD = "auto"
 
+# Measured channels of flexivrdk::RobotStates returned under their RDK names.
+# ``q`` is returned as ``qpos``, and ``qvel`` is a copy of ``dtheta``.
+RDK_MEASURED_STATE_FIELDS = (
+    "theta",
+    "dq",
+    "dtheta",
+    "tau",
+    "tau_des",
+    "tau_dot",
+    "tau_ext",
+    "tau_interact",
+    "temperature",
+    "tcp_pose",
+    "tcp_vel",
+    "flange_pose",
+    "ft_sensor_raw",
+    "ext_wrench_in_tcp",
+    "ext_wrench_in_world",
+    "ext_wrench_in_tcp_raw",
+    "ext_wrench_in_world_raw",
+)
+
+
+def measured_state_from_rdk(raw) -> dict[str, Any]:
+    """Convert every measured flexivrdk::RobotStates channel to numpy arrays."""
+    state = {
+        "timestamp": tuple(raw.timestamp),
+        "qpos": np.asarray(raw.q, dtype=float),
+        "qvel": np.asarray(raw.dtheta, dtype=float),
+    }
+    for name in RDK_MEASURED_STATE_FIELDS:
+        state[name] = np.asarray(getattr(raw, name), dtype=float)
+    return state
+
 
 def is_mujoco_robot_sn(robot_sn: str | None) -> bool:
     return isinstance(robot_sn, str) and robot_sn.strip().lower() == MUJOCO_ROBOT_SN
@@ -246,28 +280,12 @@ class FlexivRobotInterface:
             else np.asarray(raw.tau_des, dtype=float)
         )
 
-    @staticmethod
-    def _raw_array(raw, name: str, size: int) -> np.ndarray:
-        value = getattr(raw, name, None)
-        if value is None:
-            return np.zeros(size)
-        return np.asarray(value, dtype=float)
-
     def state_minimal(self, timeout_ms: int = 1000) -> dict[str, np.ndarray]:
+        """Wait for one fresh state and return every measured channel, without model terms."""
         ctrl = self._require_started()
         raw = ctrl.read_once(timeout_ms)
-        state = {
-            "timestamp": tuple(raw.timestamp),
-            "qpos": np.asarray(raw.q, dtype=float),
-            "qvel": np.asarray(raw.dtheta, dtype=float),
-            "dq": np.asarray(raw.dq, dtype=float),
-            "theta": np.asarray(raw.theta, dtype=float),
-            "dtheta": np.asarray(raw.dtheta, dtype=float),
-            "tau": np.asarray(raw.tau, dtype=float),
-            "tau_des": np.asarray(raw.tau_des, dtype=float),
-            "tau_ext": np.asarray(raw.tau_ext, dtype=float),
-            "last_torque": self._last_or_raw_torque(raw),
-        }
+        state = measured_state_from_rdk(raw)
+        state["last_torque"] = self._last_or_raw_torque(raw)
         if getattr(self, "model_backend", "rdk") == "mujoco":
             state["model_backend"] = np.asarray(["mujoco"], dtype=object)
             state["mujoco_velocity_source"] = np.asarray(
@@ -317,39 +335,15 @@ class FlexivRobotInterface:
         if backend is None:
             raise RuntimeError("MuJoCo model backend has not been initialized")
 
-        qpos = np.asarray(raw.q, dtype=float)
-        dq = np.asarray(raw.dq, dtype=float)
-        dtheta = np.asarray(raw.dtheta, dtype=float)
-        qvel = dtheta if self.mujoco_velocity_source == "dtheta" else dq
-        model_state = backend.state(qpos, qvel)
-        state = {
-            "timestamp": tuple(raw.timestamp),
-            "qpos": qpos,
-            "qvel": qvel.copy(),
-            "dq": dq,
-            "theta": np.asarray(raw.theta, dtype=float),
-            "dtheta": dtheta,
-            "tau": np.asarray(raw.tau, dtype=float),
-            "tau_des": np.asarray(raw.tau_des, dtype=float),
-            "tau_ext": np.asarray(raw.tau_ext, dtype=float),
-            "tcp_pose": self._raw_array(raw, "tcp_pose", 7),
-            "tcp_vel": self._raw_array(raw, "tcp_vel", 6),
-            "flange_pose": self._raw_array(raw, "flange_pose", 7),
-            "ft_sensor_raw": self._raw_array(raw, "ft_sensor_raw", 6),
-            "ext_wrench_in_tcp": self._raw_array(raw, "ext_wrench_in_tcp", 6),
-            "ext_wrench_in_world": self._raw_array(raw, "ext_wrench_in_world", 6),
-            "ext_wrench_in_tcp_raw": self._raw_array(
-                raw, "ext_wrench_in_tcp_raw", 6
-            ),
-            "ext_wrench_in_world_raw": self._raw_array(
-                raw, "ext_wrench_in_world_raw", 6
-            ),
-            "last_torque": self._last_or_raw_torque(raw),
-            "model_backend": np.asarray(["mujoco"], dtype=object),
-            "mujoco_velocity_source": np.asarray(
-                [self.mujoco_velocity_source], dtype=object
-            ),
-        }
+        state = measured_state_from_rdk(raw)
+        state["last_torque"] = self._last_or_raw_torque(raw)
+        if self.mujoco_velocity_source == "dq":
+            state["qvel"] = state["dq"].copy()
+        model_state = backend.state(state["qpos"], state["qvel"])
+        state["model_backend"] = np.asarray(["mujoco"], dtype=object)
+        state["mujoco_velocity_source"] = np.asarray(
+            [self.mujoco_velocity_source], dtype=object
+        )
         state.update(model_state)
         return state
 
@@ -658,7 +652,18 @@ class MujocoRobotInterface:
             "dtheta": qvel.copy(),
             "tau": tau,
             "tau_des": tau_des,
+            "tau_dot": np.zeros(self.dof),
             "tau_ext": np.zeros(self.dof),
+            "tau_interact": np.zeros(self.dof),
+            "temperature": np.zeros(self.dof),
+            "tcp_pose": np.zeros(7),
+            "tcp_vel": np.zeros(6),
+            "flange_pose": np.zeros(7),
+            "ft_sensor_raw": np.zeros(6),
+            "ext_wrench_in_tcp": np.zeros(6),
+            "ext_wrench_in_world": np.zeros(6),
+            "ext_wrench_in_tcp_raw": np.zeros(6),
+            "ext_wrench_in_world_raw": np.zeros(6),
             "last_torque": tau_des.copy(),
             "model_backend": np.asarray(["mujoco"], dtype=object),
             "mujoco_velocity_source": np.asarray(
@@ -679,21 +684,7 @@ class MujocoRobotInterface:
         backend = self._require_started()
         minimal = self.state_minimal()
         model_state = backend.state(minimal["qpos"], minimal["qvel"])
-        state = {
-            **minimal,
-            "tcp_pose": np.zeros(7),
-            "tcp_vel": np.zeros(6),
-            "flange_pose": np.zeros(7),
-            "ft_sensor_raw": np.zeros(6),
-            "ext_wrench_in_tcp": np.zeros(6),
-            "ext_wrench_in_world": np.zeros(6),
-            "ext_wrench_in_tcp_raw": np.zeros(6),
-            "ext_wrench_in_world_raw": np.zeros(6),
-            "model_backend": np.asarray(["mujoco"], dtype=object),
-            "mujoco_velocity_source": np.asarray(
-                [self.mujoco_velocity_source], dtype=object
-            ),
-        }
+        state = minimal
         state.update(model_state)
         return state
 

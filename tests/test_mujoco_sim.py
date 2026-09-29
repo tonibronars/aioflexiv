@@ -5,12 +5,25 @@ import unittest
 
 import numpy as np
 
-from aioflexiv.robot import MujocoRobotInterface
+from aioflexiv.robot import RDK_MEASURED_STATE_FIELDS, MujocoRobotInterface
 from aioflexiv.tools import ToolPayload
 
 
 @unittest.skipIf(importlib.util.find_spec("mujoco") is None, "mujoco is not installed")
 class MujocoRobotInterfaceTests(unittest.TestCase):
+    def test_minimal_state_has_every_rdk_measured_channel(self):
+        robot = MujocoRobotInterface(mujoco_viewer=False, mujoco_realtime=False)
+        robot.start()
+        try:
+            state = robot.state_minimal()
+            for name in RDK_MEASURED_STATE_FIELDS:
+                self.assertIsInstance(state[name], np.ndarray, name)
+            np.testing.assert_array_equal(state["temperature"], np.zeros(robot.dof))
+            np.testing.assert_array_equal(state["ext_wrench_in_world"], np.zeros(6))
+            self.assertEqual(state["flange_pose"].shape, (7,))
+        finally:
+            robot.stop()
+
     def test_start_state_and_step_use_mujoco_physics(self) -> None:
         robot = MujocoRobotInterface(mujoco_viewer=False, mujoco_realtime=False)
         robot.start()

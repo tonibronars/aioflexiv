@@ -208,7 +208,10 @@ public:
         result["dtheta"] = state.dtheta;
         result["tau"] = state.tau;
         result["tau_des"] = state.tau_des;
+        result["tau_dot"] = state.tau_dot;
         result["tau_ext"] = state.tau_ext;
+        result["tau_interact"] = state.tau_interact;
+        result["temperature"] = state.temperature;
         result["tcp_pose"] = state.tcp_pose;
         result["tcp_vel"] = state.tcp_vel;
         result["flange_pose"] = state.flange_pose;
@@ -271,7 +274,10 @@ PYBIND11_MODULE(_aioflexiv_rt, m)
         .def_readonly("dtheta", &rdk::RobotStates::dtheta)
         .def_readonly("tau", &rdk::RobotStates::tau)
         .def_readonly("tau_des", &rdk::RobotStates::tau_des)
+        .def_readonly("tau_dot", &rdk::RobotStates::tau_dot)
         .def_readonly("tau_ext", &rdk::RobotStates::tau_ext)
+        .def_readonly("tau_interact", &rdk::RobotStates::tau_interact)
+        .def_readonly("temperature", &rdk::RobotStates::temperature)
         .def_readonly("tcp_pose", &rdk::RobotStates::tcp_pose)
         .def_readonly("tcp_vel", &rdk::RobotStates::tcp_vel)
         .def_readonly("flange_pose", &rdk::RobotStates::flange_pose)

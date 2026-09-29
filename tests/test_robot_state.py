@@ -5,10 +5,51 @@ import unittest
 
 import numpy as np
 
-from aioflexiv.robot import FlexivRobotInterface
+from aioflexiv.robot import RDK_MEASURED_STATE_FIELDS, FlexivRobotInterface
 
 
 class RobotStateTests(unittest.TestCase):
+    def make_rdk_robot(self):
+        # The native bridge returns every RobotStates channel as a Python list.
+        sizes = {"q": 7, "tcp_pose": 7, "tcp_vel": 6, "flange_pose": 7,
+                 "ft_sensor_raw": 6, "ext_wrench_in_tcp": 6,
+                 "ext_wrench_in_world": 6, "ext_wrench_in_tcp_raw": 6,
+                 "ext_wrench_in_world_raw": 6}
+        names = ("q",) + RDK_MEASURED_STATE_FIELDS
+        raw = SimpleNamespace(timestamp=(3, 45), **{
+            name: [float(index)] * sizes.get(name, 7)
+            for index, name in enumerate(names)
+        })
+        calls = []
+
+        def read_once(timeout_ms):
+            calls.append(("read_once", timeout_ms))
+            return raw
+
+        robot = FlexivRobotInterface.__new__(FlexivRobotInterface)
+        robot._ctrl = SimpleNamespace(read_once=read_once)
+        robot._last_torque = None
+        robot.model_backend = "rdk"
+        return robot, raw, calls
+
+    def test_minimal_state_returns_every_measured_channel_with_one_read(self):
+        robot, raw, calls = self.make_rdk_robot()
+        state = robot.state_minimal(23)
+        self.assertEqual(calls, [("read_once", 23)])
+        for name in RDK_MEASURED_STATE_FIELDS:
+            self.assertIsInstance(state[name], np.ndarray, name)
+            np.testing.assert_array_equal(state[name], getattr(raw, name))
+        np.testing.assert_array_equal(state["qpos"], raw.q)
+        np.testing.assert_array_equal(state["qvel"], raw.dtheta)
+        np.testing.assert_array_equal(state["last_torque"], raw.tau_des)
+        self.assertEqual(state["timestamp"], raw.timestamp)
+
+    def test_missing_measurement_is_not_fabricated(self):
+        robot, raw, _ = self.make_rdk_robot()
+        del raw.temperature
+        with self.assertRaises(AttributeError):
+            robot.state_minimal()
+
     def test_state_exposes_force_torque_fields_as_arrays(self) -> None:
         raw_state = {
             "timestamp": (1, 2),
@@ -71,6 +112,17 @@ class RobotStateTests(unittest.TestCase):
             tau=[0.0] * 7,
             tau_des=[0.0] * 7,
             tau_ext=[0.0] * 7,
+            tau_dot=[0.0] * 7,
+            tau_interact=[0.0] * 7,
+            temperature=[0.0] * 7,
+            tcp_pose=[0.0] * 7,
+            tcp_vel=[0.0] * 6,
+            flange_pose=[0.0] * 7,
+            ft_sensor_raw=[0.0] * 6,
+            ext_wrench_in_tcp=[0.0] * 6,
+            ext_wrench_in_world=[0.0] * 6,
+            ext_wrench_in_tcp_raw=[0.0] * 6,
+            ext_wrench_in_world_raw=[0.0] * 6,
         )
         ctrl = SimpleNamespace(read_once=lambda timeout_ms: raw_state)
 
@@ -94,6 +146,17 @@ class RobotStateTests(unittest.TestCase):
             tau=[0.0] * 7,
             tau_des=[0.0] * 7,
             tau_ext=[0.0] * 7,
+            tau_dot=[0.0] * 7,
+            tau_interact=[0.0] * 7,
+            temperature=[0.0] * 7,
+            tcp_pose=[0.0] * 7,
+            tcp_vel=[0.0] * 6,
+            flange_pose=[0.0] * 7,
+            ft_sensor_raw=[0.0] * 6,
+            ext_wrench_in_tcp=[0.0] * 6,
+            ext_wrench_in_world=[0.0] * 6,
+            ext_wrench_in_tcp_raw=[0.0] * 6,
+            ext_wrench_in_world_raw=[0.0] * 6,
         )
         ctrl = SimpleNamespace(read_once=lambda timeout_ms: raw_state)
 
