@@ -11,6 +11,7 @@ from .mujoco_model import (
     default_mujoco_scene_path,
 )
 from .robot import DEFAULT_MUJOCO_TIMESTEP, FlexivRobotInterface, MujocoRobotInterface
+from .state_reader import FlexivStateReader
 from .tools import ToolPayload
 
 try:
@@ -24,6 +25,7 @@ __all__ = [
     "DEFAULT_MUJOCO_TIMESTEP",
     "DEFAULT_MUJOCO_SITE_NAME",
     "FlexivRobotInterface",
+    "FlexivStateReader",
     "MujocoModelBackend",
     "MujocoRobotInterface",
     "ToolPayload",

@@ -346,3 +346,27 @@ If you use this library in your research, please cite:
 
 - Built on [Flexiv RDK](https://www.flexiv.com/software/rdk)
 - Trajectory generation with [Ruckig](https://github.com/pantor/ruckig)
+
+## Read-only robot state
+
+`FlexivStateReader` opens a separate connection that never enables the robot,
+clears faults, switches mode or calls `Stop`, so it can observe a robot that
+another process controls. Closing it only releases the connection:
+
+```python
+from aioflexiv import FlexivStateReader
+
+with FlexivStateReader(
+    "Rizon4s-123456", network_interface_whitelist=["192.168.100.10"]
+) as reader:
+    state = reader.read()
+    print(state["qpos"], state["ext_wrench_in_world"], state["timestamp"])
+    print(reader.status())
+```
+
+`read()` returns the same measured channels as `state_minimal()`, as NumPy
+arrays, plus `timestamp_monotonic`, the local receipt time. The RDK can return
+the same state twice, so check that `timestamp` advances when you need fresh
+samples. `status()` reports the mode, stopped, connected, fault, operational and
+E-stop-released flags; the Python RDK reports real-time modes as `"???"`. The
+`info` property copies the robot metadata and reported joint limits.
