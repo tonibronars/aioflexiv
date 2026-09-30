@@ -360,7 +360,7 @@ class MujocoModelBackend:
 
     def _mass_matrix(self, data) -> np.ndarray:
         mm = np.zeros((self.model.nv, self.model.nv))
-        self._mujoco.mj_fullM(self.model, mm, data.qM)
+        self._mujoco.mj_fullM(self.model, data, mm)
         return mm
 
     def _gravity(self, qpos: np.ndarray) -> np.ndarray:

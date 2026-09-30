@@ -12,7 +12,7 @@ license = "Apache-2.0"
 authors = [{ name = "Younghyo Park" }]
 dependencies = [
     "flexivrdk==1.9.1",
-    "mujoco",
+    "mujoco>=3.13",
     "numpy",
     "ruckig",
 ]
